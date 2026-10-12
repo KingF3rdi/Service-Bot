@@ -448,8 +448,13 @@ async function onAutocomplete(i) {
 
 // ---------- Events ----------
 
-client.once('ready', async () => {
-  const g = await client.guilds.fetch(env.GUILD_ID);
+client.once('clientReady', async () => {
+  const g = await client.guilds.fetch(env.GUILD_ID).catch(() => null);
+  if (!g) {
+    const invite = `https://discord.com/oauth2/authorize?client_id=${client.user.id}&scope=bot+applications.commands&permissions=8`;
+    console.error(`❌ Bot ist nicht auf dem Server GUILD_ID=${env.GUILD_ID} (oder die ID ist falsch).\n   Server, auf denen der Bot ist: ${client.guilds.cache.map((x) => `${x.name} (${x.id})`).join(', ') || 'keine'}\n   Bot einladen: ${invite}`);
+    return process.exit(1);
+  }
   await g.commands.set(commands.map((c) => c.toJSON()));
   console.log(`${BRAND_NAME} online als ${client.user.tag}`);
 });
