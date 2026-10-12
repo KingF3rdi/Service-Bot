@@ -28,6 +28,7 @@ const defaults = {
     { name: 'Zombie Piglin', get: 'STOP', pay: 'STOP', color: '#f48fb1' },
   ],
   maparts: {}, // id -> { name, price, size, ownerId, ownerName, thirdParty, image, messageId }
+  schematics: {}, // id -> { name, price, desc, image, file, fileName, messageId }
   vouches: [], // { user, avatar, stars, text, service, date }
   open: {}, // channelId -> { userId, kind, serviceId, label }
   panels: {}, // key -> { channelId, messageId }

@@ -29,9 +29,10 @@ const embed = () => new EmbedBuilder()
   .setTimestamp();
 
 const row = (...c) => new ActionRowBuilder().addComponents(...c);
-const input = (id, label, style = TextInputStyle.Short, required = true, placeholder) => {
+const input = (id, label, style = TextInputStyle.Short, required = true, placeholder, value) => {
   const t = new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required);
   if (placeholder) t.setPlaceholder(placeholder);
+  if (value) t.setValue(value);
   return row(t);
 };
 const modal = (id, title, ...rows) => new ModalBuilder().setCustomId(id).setTitle(title).addComponents(...rows);
@@ -39,6 +40,18 @@ const slug = (s) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-'
 const openCount = (serviceId) => Object.values(db.data.open).filter((t) => t.serviceId === serviceId).length;
 const findService = (id) => db.data.services.find((s) => s.id === id);
 const findSpawner = (name) => db.data.spawners.find((s) => s.name.toLowerCase() === name.trim().toLowerCase());
+const isTeam = (i, roleId) => i.memberPermissions?.has(P.ManageGuild) || Boolean(roleId && i.member?.roles?.cache?.has(roleId));
+const download = async (att) => Buffer.from(await (await fetch(att.url)).arrayBuffer());
+const extOf = (name) => name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+// Schematic-Dateien privat speichern (nicht unter uploads/, das ist öffentlich)
+const FILES = path.join(__dirname, '..', 'files');
+
+const SUPPORT_TOPICS = {
+  frage: { label: 'Allgemeine Frage', emoji: '❓', desc: 'Fragen zu Services, Preisen oder Ablauf' },
+  bestellung: { label: 'Problem mit Bestellung', emoji: '📦', desc: 'Etwas stimmt mit deinem Auftrag nicht' },
+  report: { label: 'Report / Beschwerde', emoji: '🚨', desc: 'Scam, Regelverstoß oder Beschwerde melden' },
+  sonstiges: { label: 'Sonstiges', emoji: '💬', desc: 'Alles andere' },
+};
 
 // ---------- Panels ----------
 
@@ -82,6 +95,7 @@ function spawnerPanel() {
     components: [row(
       new ButtonBuilder().setCustomId('spawner:buy').setLabel('Spawner kaufen').setEmoji('🛒').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('spawner:sell').setLabel('Spawner verkaufen').setEmoji('💰').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('spawneredit').setLabel('Preise aktualisieren').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
     )],
   };
 }
@@ -123,7 +137,33 @@ function mapartPanel() {
   return { embeds: [e], components: [row(menu)] };
 }
 
-const PANELS = { service: servicePanel, custom: customPanel, spawner: spawnerPanel, afk: afkPanel, mapart: mapartPanel };
+function schematicPanel() {
+  const list = Object.entries(db.data.schematics).reverse().slice(0, 25);
+  const e = embed().setTitle('📐 Schematics kaufen').setDescription([
+    'Fertige Schematics unserer Builder – nach dem Kauf bekommst du die Datei direkt per DM.',
+    ...(list.length
+      ? list.map(([, s]) => `### ${s.name}\n💰 **${s.price}** · 📄 .${extOf(s.file)}${s.desc ? `\n${s.desc.split('\n')[0].slice(0, 120)}` : ''}`)
+      : ['*Gerade sind keine Schematics verfügbar – schau bald wieder vorbei.*']),
+    '-# Vorschaubilder findest du in den einzelnen Schematic-Posts und auf unserer Website.',
+  ].join('\n\n'));
+  if (!list.length) return { embeds: [e], components: [] };
+  const menu = new StringSelectMenuBuilder().setCustomId('schemsel').setPlaceholder('Schematic auswählen …')
+    .addOptions(list.map(([id, s]) => ({ label: s.name.slice(0, 100), value: id, emoji: '📐', description: `${s.price} · .${extOf(s.file)}`.slice(0, 100) })));
+  return { embeds: [e], components: [row(menu)] };
+}
+
+function supportPanel() {
+  const e = embed().setTitle('🛟 Support').setDescription([
+    'Du hast eine Frage oder ein Problem? Wähle unten dein Thema – es öffnet sich ein privates Ticket mit unserem Support-Team.',
+    ...Object.values(SUPPORT_TOPICS).map((t) => `### ${t.emoji} ${t.label}\n${t.desc}`),
+    '-# Bitte beschreibe dein Anliegen so genau wie möglich – so können wir schneller helfen.',
+  ].join('\n\n'));
+  const menu = new StringSelectMenuBuilder().setCustomId('support').setPlaceholder('Thema auswählen …')
+    .addOptions(Object.entries(SUPPORT_TOPICS).map(([k, t]) => ({ label: t.label, value: k, emoji: t.emoji, description: t.desc })));
+  return { embeds: [e], components: [row(menu)] };
+}
+
+const PANELS = { service: servicePanel, custom: customPanel, spawner: spawnerPanel, afk: afkPanel, mapart: mapartPanel, schematic: schematicPanel, support: supportPanel };
 
 async function refresh(key) {
   const p = db.data.panels[key];
@@ -135,7 +175,7 @@ async function refresh(key) {
 
 // ---------- Tickets ----------
 
-async function openTicket(i, { kind, serviceId = null, label, prefix, roleIds = [], extraUserIds = [], info }) {
+async function openTicket(i, { kind, serviceId = null, label, prefix, roleIds = [], extraUserIds = [], info, buttons = [] }) {
   const g = i.guild;
   const dup = Object.entries(db.data.open).find(([, t]) => t.userId === i.user.id && t.kind === kind && t.serviceId === serviceId);
   if (dup) return i.editReply(`Du hast bereits ein offenes Ticket: <#${dup[0]}>`);
@@ -163,7 +203,7 @@ async function openTicket(i, { kind, serviceId = null, label, prefix, roleIds = 
   await ch.send({
     content: [i.user, ...extras.map((id) => `<@${id}>`), ...roles.map((id) => `<@&${id}>`)].join(' '),
     embeds: [info.setTitle(`🎫 ${label}`)],
-    components: [row(new ButtonBuilder().setCustomId('close').setLabel('Ticket schließen').setEmoji('🔒').setStyle(ButtonStyle.Danger))],
+    components: [row(...buttons, new ButtonBuilder().setCustomId('close').setLabel('Ticket schließen').setEmoji('🔒').setStyle(ButtonStyle.Danger))],
   });
   if (serviceId) refresh('service');
   return i.editReply(`✅ Dein Ticket wurde erstellt: ${ch}`);
@@ -185,7 +225,15 @@ const admin = P.ManageGuild;
 const commands = [
   new SlashCommandBuilder().setName('panel').setDescription('Panel in diesem Kanal senden').setDefaultMemberPermissions(admin)
     .addStringOption((o) => o.setName('typ').setDescription('Welches Panel?').setRequired(true)
-      .addChoices({ name: 'Services', value: 'service' }, { name: 'Custom Map-Art', value: 'custom' }, { name: 'Spawner Handel', value: 'spawner' }, { name: 'AFK Service', value: 'afk' }, { name: 'Map-Arts', value: 'mapart' })),
+      .addChoices({ name: 'Services', value: 'service' }, { name: 'Custom Map-Art', value: 'custom' }, { name: 'Spawner Handel', value: 'spawner' }, { name: 'AFK Service', value: 'afk' }, { name: 'Map-Arts', value: 'mapart' },
+        { name: 'Schematics', value: 'schematic' }, { name: 'Support', value: 'support' })),
+
+  new SlashCommandBuilder().setName('schematic').setDescription('Schematic zum Verkauf posten').setDefaultMemberPermissions(admin)
+    .addAttachmentOption((o) => o.setName('bild').setDescription('Vorschaubild').setRequired(true))
+    .addAttachmentOption((o) => o.setName('datei').setDescription('.litematic / .schem / .schematic / .nbt – wird nach Kauf ausgeliefert').setRequired(true))
+    .addStringOption((o) => o.setName('name').setDescription('Name').setRequired(true).setMaxLength(80))
+    .addStringOption((o) => o.setName('preis').setDescription('z. B. 3M').setRequired(true))
+    .addStringOption((o) => o.setName('beschreibung').setDescription('Kurzbeschreibung (\\n = neue Zeile)').setMaxLength(500)),
 
   new SlashCommandBuilder().setName('afkpreis').setDescription('Preise für das AFK-Panel setzen').setDefaultMemberPermissions(admin)
     .addStringOption((o) => o.setName('paket').setDescription('Was?').setRequired(true)
@@ -308,6 +356,40 @@ async function onCommand(i) {
     return i.editReply('✅ Map-Art gepostet.');
   }
 
+  if (i.commandName === 'schematic') {
+    await i.deferReply({ ephemeral: true });
+    const img = i.options.getAttachment('bild');
+    const dat = i.options.getAttachment('datei');
+    if (!img.contentType?.startsWith('image/')) return i.editReply('❌ Das Vorschaubild muss ein Bild sein.');
+    if (!/\.(litematic|schem|schematic|nbt)$/i.test(dat.name)) return i.editReply('❌ Datei muss .litematic, .schem, .schematic oder .nbt sein.');
+    const id = Date.now().toString(36);
+    const iext = extOf(img.name), dext = extOf(dat.name);
+    const imgBuf = await download(img);
+    fs.mkdirSync(web.UPLOADS, { recursive: true });
+    fs.mkdirSync(FILES, { recursive: true });
+    fs.writeFileSync(path.join(web.UPLOADS, `${id}.${iext}`), imgBuf);
+    fs.writeFileSync(path.join(FILES, `${id}.${dext}`), await download(dat));
+    const s = {
+      name: i.options.getString('name'), price: i.options.getString('preis'),
+      desc: (i.options.getString('beschreibung') ?? '').replaceAll('\\n', '\n'),
+      image: `${id}.${iext}`, file: `${id}.${dext}`, fileName: dat.name.replace(/[^\w.-]/g, '_'),
+    };
+    const e = embed().setTitle(`📐 ${s.name}`).setImage(`attachment://schematic.${iext}`).addFields(
+      { name: '💰 Preis', value: s.price, inline: true },
+      { name: '📄 Format', value: `.${dext}`, inline: true },
+      { name: '📦 Lieferung', value: 'Datei nach Kauf per DM', inline: true },
+    );
+    if (s.desc) e.setDescription(s.desc);
+    const msg = await i.channel.send({
+      embeds: [e], files: [new AttachmentBuilder(imgBuf, { name: `schematic.${iext}` })],
+      components: [row(new ButtonBuilder().setCustomId(`schem:${id}`).setLabel('Schematic kaufen').setEmoji('🛒').setStyle(ButtonStyle.Success))],
+    });
+    db.data.schematics[id] = { ...s, messageId: msg.id };
+    db.save();
+    await refresh('schematic');
+    return i.editReply('✅ Schematic gepostet. Die Datei ist hinterlegt und wird nach dem Kauf im Ticket per Button ausgeliefert.');
+  }
+
   if (i.commandName === 'afkpreis') {
     db.data.afkPrices[i.options.getString('paket')] = i.options.getString('preis');
     db.save();
@@ -394,6 +476,24 @@ async function onComponent(i) {
       input('notes', 'Anmerkungen', TextInputStyle.Paragraph, false)));
   }
 
+  if (id === 'spawneredit') {
+    if (!isTeam(i, env.SPAWNER_ROLE_ID)) return i.reply({ content: '⛔ Nur das Team kann Spawner-Preise ändern.', ephemeral: true });
+    // Button -> Auswahl, Auswahl -> Formular mit aktuellen Werten
+    if (i.isButton()) {
+      const menu = new StringSelectMenuBuilder().setCustomId('spawneredit').setPlaceholder('Spawner auswählen …').addOptions(
+        ...db.data.spawners.slice(0, 24).map((s) => ({ label: s.name, value: s.name, description: `Du erhältst ${s.get || 'STOP'} · Du zahlst ${s.pay || 'STOP'}` })),
+        { label: 'Neuer Spawner', value: '__new', emoji: '➕' },
+      );
+      return i.reply({ content: 'Welchen Spawner möchtest du aktualisieren?', components: [row(menu)], ephemeral: true });
+    }
+    const s = i.values[0] === '__new' ? null : findSpawner(i.values[0]);
+    return i.showModal(modal(`spawnerset:${s?.name ?? ''}`, s ? `${s.name} aktualisieren`.slice(0, 45) : 'Neuer Spawner',
+      input('name', 'Name', TextInputStyle.Short, true, 'z. B. Creeper', s?.name),
+      input('get', 'Du erhältst (Ankauf) – Preis oder STOP', TextInputStyle.Short, true, 'z. B. 6.5M', s?.get),
+      input('pay', 'Du zahlst (Verkauf) – Preis oder STOP', TextInputStyle.Short, true, 'z. B. 6M', s?.pay),
+      input('color', 'Mob-Farbe (Hex)', TextInputStyle.Short, false, '#4caf50', s?.color)));
+  }
+
   if (id === 'spawner') {
     const buy = arg === 'buy';
     return i.showModal(modal(`spawnerm:${arg}`, buy ? 'Spawner kaufen' : 'Spawner verkaufen',
@@ -419,6 +519,47 @@ async function onComponent(i) {
       kind: 'mapart', label: `Map-Art: ${m.name}`, prefix: 'mapart', info,
       roleIds: [env.MAPART_ROLE_ID], extraUserIds: m.thirdParty ? [m.ownerId] : [],
     });
+  }
+
+  if (id === 'schem' || id === 'schemsel') {
+    const sid = id === 'schem' ? arg : i.values[0];
+    const s = db.data.schematics[sid];
+    if (!s) return i.reply({ content: '❌ Diese Schematic ist nicht mehr verfügbar.', ephemeral: true });
+    await i.deferReply({ ephemeral: true });
+    const info = embed().setDescription(`${i.user} möchte diese Schematic kaufen.\nNach der Bezahlung liefert das Team die Datei per Button aus.`)
+      .addFields({ name: '📐 Schematic', value: s.name, inline: true }, { name: '💰 Preis', value: s.price, inline: true }, { name: '📄 Format', value: `.${extOf(s.file)}`, inline: true });
+    const img = id === 'schem' && i.message.embeds[0]?.image?.url;
+    if (img) info.setThumbnail(img);
+    return openTicket(i, {
+      kind: 'schematic', label: `Schematic: ${s.name}`, prefix: 'schematic', info, roleIds: [env.SCHEMATIC_ROLE_ID],
+      buttons: [new ButtonBuilder().setCustomId(`schemsend:${sid}`).setLabel('Bezahlt – Datei senden').setEmoji('📤').setStyle(ButtonStyle.Success)],
+    });
+  }
+
+  if (id === 'schemsend') {
+    if (!isTeam(i, env.SCHEMATIC_ROLE_ID)) return i.reply({ content: '⛔ Nur das Team kann die Datei ausliefern.', ephemeral: true });
+    const s = db.data.schematics[arg];
+    const t = db.data.open[i.channelId];
+    const file = s && path.join(FILES, s.file);
+    if (!s || !t || !fs.existsSync(file)) return i.reply({ content: '❌ Schematic-Datei nicht gefunden.', ephemeral: true });
+    await i.deferUpdate();
+    const buyer = await client.users.fetch(t.userId);
+    const delivery = { embeds: [embed().setTitle(`📦 ${s.name}`).setDescription(`Danke für deinen Kauf im **${BRAND_NAME}**! Hier ist deine Schematic.`)] };
+    const dm = await buyer.send({ ...delivery, files: [new AttachmentBuilder(file, { name: s.fileName })] }).catch(() => null);
+    // Zusätzlich im Ticket, falls DMs zu sind
+    await i.channel.send({ content: `${buyer} ${dm ? '📬 Datei wurde dir auch per DM geschickt.' : '⚠️ DM nicht möglich – hier ist deine Datei:'}`, ...delivery, files: [new AttachmentBuilder(file, { name: s.fileName })] });
+    return i.message.edit({ components: [row(
+      new ButtonBuilder().setCustomId('schemsent').setLabel(`Ausgeliefert von ${i.user.username}`.slice(0, 80)).setEmoji('✅').setStyle(ButtonStyle.Secondary).setDisabled(true),
+      new ButtonBuilder().setCustomId('close').setLabel('Ticket schließen').setEmoji('🔒').setStyle(ButtonStyle.Danger),
+    )] });
+  }
+
+  if (id === 'support') {
+    const t = SUPPORT_TOPICS[i.values[0]];
+    return i.showModal(modal(`supportm:${i.values[0]}`, `Support · ${t.label}`,
+      input('ign', 'Minecraft-Name'),
+      input('betreff', 'Betreff', TextInputStyle.Short, true, 'Kurz in ein paar Worten'),
+      input('details', 'Beschreibung', TextInputStyle.Paragraph, true, 'Was ist passiert? Je genauer, desto schneller können wir helfen.')));
   }
 
   if (id === 'close') {
@@ -463,6 +604,31 @@ async function onModal(i) {
   }
 
   await i.deferReply({ ephemeral: true });
+
+  if (id === 'supportm') {
+    const t = SUPPORT_TOPICS[arg];
+    return openTicket(i, {
+      kind: 'support', label: `Support · ${t.label}`, prefix: 'support', roleIds: [env.SUPPORT_ROLE_ID],
+      info: embed().setDescription(`${t.emoji} **${t.label}**\nEin Supporter meldet sich gleich bei dir.`).addFields(
+        { name: 'Minecraft-Name', value: f('ign'), inline: true },
+        { name: 'Betreff', value: f('betreff'), inline: true },
+        { name: 'Beschreibung', value: f('details') },
+      ),
+    });
+  }
+
+  if (id === 'spawnerset') {
+    if (!isTeam(i, env.SPAWNER_ROLE_ID)) return i.editReply('⛔ Nur das Team kann Spawner-Preise ändern.');
+    const color = f('color').trim();
+    if (color && !/^#[0-9a-f]{6}$/i.test(color)) return i.editReply('❌ Farbe muss so aussehen: `#4caf50`');
+    const name = f('name').trim();
+    let s = (arg && findSpawner(arg)) || findSpawner(name);
+    if (!s) db.data.spawners.push((s = { name, color: '#9e9e9e' }));
+    Object.assign(s, { name, get: f('get').trim(), pay: f('pay').trim() }, color && { color });
+    db.save();
+    await refresh('spawner');
+    return i.editReply(`✅ **${name}** aktualisiert – Du erhältst **${s.get}** · Du zahlst **${s.pay}**`);
+  }
 
   if (id === 'servicem') {
     const s = findService(arg);
@@ -548,6 +714,8 @@ client.once('clientReady', async () => {
     return process.exit(1);
   }
   await g.commands.set(commands.map((c) => c.toJSON()));
+  // Bestehende Panels nach Updates neu zeichnen (z. B. neue Buttons)
+  for (const key of Object.keys(db.data.panels)) if (PANELS[key]) await refresh(key);
   console.log(`${BRAND_NAME} online als ${client.user.tag}`);
 });
 
@@ -573,17 +741,20 @@ client.on('channelDelete', (ch) => {
   if (t.serviceId) refresh('service');
 });
 
-// Map-Art-Post gelöscht (= verkauft) -> auch von der Website nehmen
+// Map-Art- / Schematic-Post gelöscht -> Eintrag, Bild und Datei entfernen
 client.on('messageDelete', (msg) => {
-  const id = Object.keys(db.data.maparts).find((k) => db.data.maparts[k].messageId === msg.id);
-  if (!id) return;
-  const img = db.data.maparts[id].image;
-  if (img) fs.rm(path.join(web.UPLOADS, img), () => {});
-  delete db.data.maparts[id];
-  db.save();
-  refresh('mapart');
+  for (const [key, panel] of [['maparts', 'mapart'], ['schematics', 'schematic']]) {
+    const id = Object.keys(db.data[key]).find((k) => db.data[key][k].messageId === msg.id);
+    if (!id) continue;
+    const { image, file } = db.data[key][id];
+    if (image) fs.rm(path.join(web.UPLOADS, image), () => {});
+    if (file) fs.rm(path.join(FILES, file), () => {});
+    delete db.data[key][id];
+    db.save();
+    refresh(panel);
+  }
 });
 
 web.start();
 client.login(env.TOKEN);
-module.exports = { PANELS };
+module.exports = { PANELS, commands };
