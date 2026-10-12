@@ -20,7 +20,7 @@ Benötigt Node.js 20+.
 ```bash
 npm install
 cp .env.example .env   # Werte eintragen
-npm start              # Bot + Website (Port 3000)
+npm start              # Bot + Website (Port 3000), Hoster: Startdatei index.js
 ```
 
 Panels posten: `/panel typ:Services`, `/panel typ:Custom Map-Art`, `/panel typ:Spawner Handel`.

@@ -28,7 +28,8 @@ function publicData() {
   };
 }
 
-function start(port = process.env.WEB_PORT || 3000) {
+// SERVER_PORT = vom Hoster (Pterodactyl) zugewiesener Port
+function start(port = process.env.WEB_PORT || process.env.SERVER_PORT || 3000) {
   http.createServer((req, res) => {
     const url = req.url.split('?')[0];
     if (url === '/api/data') {

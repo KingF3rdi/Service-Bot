@@ -2,9 +2,9 @@
   "name": "hugosmp-service-center",
   "version": "1.0.0",
   "private": true,
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node --env-file=.env src/index.js",
+    "start": "node index.js",
     "web": "node -e \"require('./src/web').start()\"",
     "test": "node src/test.js"
   },
