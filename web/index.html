@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HugoSMP Service Center</title>
+<meta name="description" content="Map-Arts, AFK-Service mit 22h Uptime und Spawner-Handel auf HugoSMP – sicher abgewickelt per Discord-Ticket.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #120911;
+    --bg-2: #1a0d18;
+    --card: #211320;
+    --card-2: #2a1828;
+    --line: #3a2338;
+    --text: #f7ecf4;
+    --muted: #b49aae;
+    --gold: #f4b400;
+    --gold-2: #ffcf4a;
+    --pink: #ff7ac8;
+    --green: #3ecf8e;
+    --red: #ff6b6b;
+    --grey: #8e7a8a;
+    --radius: 16px;
+    --max: 1160px;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { display: block; max-width: 100%; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+
+  /* Nav */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap { display: flex; align-items: center; gap: 32px; height: 68px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.01em; }
+  .logo i {
+    width: 14px; height: 14px; background: var(--pink); transform: rotate(45deg); border-radius: 2px;
+    box-shadow: 0 0 18px var(--pink);
+  }
+  .logo span { color: var(--gold); }
+  .links { display: flex; gap: 24px; margin-left: auto; font-size: 14px; font-weight: 500; color: var(--muted); }
+  .links a:hover { color: var(--text); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 44px; padding: 0 20px; border-radius: 999px;
+    font-weight: 700; font-size: 15px; white-space: nowrap;
+    transition: transform .15s, background .15s;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-gold { background: var(--gold); color: #2a1600; }
+  .btn-gold:hover { background: var(--gold-2); }
+  .btn-ghost { border: 1px solid var(--line); background: var(--card); }
+  .btn-ghost:hover { background: var(--card-2); }
+  .btn-sm { height: 38px; padding: 0 16px; font-size: 14px; }
+
+  /* Hero */
+  .hero { position: relative; padding: 96px 0 80px; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: -40% -10% auto; height: 120%;
+    background:
+      radial-gradient(40% 50% at 30% 30%, rgba(255, 122, 200, .16), transparent 70%),
+      radial-gradient(35% 45% at 75% 20%, rgba(244, 180, 0, .12), transparent 70%);
+    pointer-events: none;
+  }
+  .hero .wrap { position: relative; }
+  .eyebrow {
+    display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: .2em;
+    color: var(--pink); text-transform: uppercase; margin-bottom: 20px;
+  }
+  h1 {
+    font-size: clamp(40px, 6.5vw, 72px); line-height: 1.05; font-weight: 800;
+    letter-spacing: -0.03em; max-width: 14ch;
+  }
+  h1 em { font-style: normal; color: var(--gold); }
+  .lead { font-size: clamp(17px, 2vw, 20px); color: var(--muted); max-width: 56ch; margin-top: 24px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    margin-top: 64px; background: var(--line); border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .stat { background: var(--bg-2); padding: 24px; }
+  .stat b { display: block; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+  .stat span { font-size: 14px; color: var(--muted); }
+
+  /* Sections */
+  section { padding: 88px 0; }
+  section:nth-of-type(even) { background: var(--bg-2); border-block: 1px solid var(--line); }
+  .head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 40px; flex-wrap: wrap; }
+  h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .head p { color: var(--muted); max-width: 52ch; margin-top: 8px; }
+  .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 24px; display: flex; flex-direction: column;
+  }
+  .empty { color: var(--muted); padding: 40px; text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+    font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+    background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c);
+  }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* Services */
+  .svc-emoji {
+    width: 48px; height: 48px; display: grid; place-items: center; font-size: 24px;
+    background: var(--card-2); border-radius: 12px; margin-bottom: 18px;
+  }
+  .svc h3 { font-size: 19px; font-weight: 700; margin-bottom: 8px; }
+  .svc p { color: var(--muted); font-size: 15px; flex: 1; margin-bottom: 20px; }
+  .svc.off { opacity: .55; }
+  .svc.off h3 { text-decoration: line-through; }
+
+  /* Spawner */
+  .spawners { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  .sp { align-items: center; text-align: center; }
+  .sp svg { width: 96px; height: 96px; margin: 4px 0 12px; }
+  .sp h3 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+  .prices { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 8px; margin-bottom: 18px; }
+  .prices div { background: var(--card-2); border-radius: 10px; padding: 10px 6px; }
+  .prices small { display: block; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
+  .prices b { font-size: 20px; font-weight: 800; color: var(--gold); }
+  .prices b.stop { color: var(--red); }
+  .sp .pill { align-self: center; }
+
+  /* Map-Arts */
+  .mapart { padding: 0; overflow: hidden; }
+  .mapart .img {
+    aspect-ratio: 1; background: var(--card-2);
+    display: grid; place-items: center; color: var(--muted); font-size: 40px;
+  }
+  .mapart .img img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+  .mapart .body { padding: 20px 24px 24px; display: flex; flex-direction: column; flex: 1; }
+  .mapart h3 { font-size: 18px; font-weight: 700; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--muted); margin: 6px 0 18px; }
+  .price-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; }
+  .price { font-size: 22px; font-weight: 800; color: var(--gold); }
+
+  /* Custom */
+  .custom h3 { font-size: 18px; font-weight: 700; margin: 14px 0 6px; }
+  .custom p { color: var(--muted); font-size: 15px; flex: 1; }
+  .custom .price { margin-top: 20px; }
+  .custom .price small { font-size: 14px; color: var(--muted); font-weight: 500; }
+
+  /* Steps */
+  .steps { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); counter-reset: s; }
+  .step::before {
+    counter-increment: s; content: counter(s);
+    width: 36px; height: 36px; display: grid; place-items: center; margin-bottom: 18px;
+    border-radius: 50%; background: var(--gold); color: #2a1600; font-weight: 800;
+  }
+  .step h3 { font-size: 18px; margin-bottom: 6px; }
+  .step p { color: var(--muted); font-size: 15px; }
+
+  /* Vouches */
+  .vouches { columns: 3 300px; column-gap: 20px; }
+  .vouch { break-inside: avoid; margin-bottom: 20px; }
+  .stars { color: var(--gold); letter-spacing: 2px; font-size: 16px; }
+  .vouch p { margin: 12px 0 18px; font-size: 15px; white-space: pre-line; overflow-wrap: anywhere; }
+  .who { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .who img { width: 32px; height: 32px; border-radius: 50%; background: var(--card-2); }
+  .who small { display: block; color: var(--muted); font-size: 13px; }
+
+  /* Final CTA + Footer */
+  .final { text-align: center; }
+  .final .card { align-items: center; padding: 56px 24px; background:
+    radial-gradient(60% 80% at 50% 0%, rgba(244, 180, 0, .14), transparent 70%), var(--card); }
+  .final p { color: var(--muted); margin: 12px 0 28px; max-width: 48ch; }
+  footer { padding: 40px 0; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  @media (max-width: 860px) {
+    .links { display: none; }
+    nav .btn { margin-left: auto; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 16px; }
+    .hero { padding: 64px 0 56px; }
+    section { padding: 64px 0; }
+    .stat { padding: 18px; }
+    .stat b { font-size: 22px; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .btn { transition: none; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="#"><i></i>HugoSMP <span>Service Center</span></a>
+    <div class="links">
+      <a href="#services">Services</a>
+      <a href="#spawner">Spawner</a>
+      <a href="#maparts">Map-Arts</a>
+      <a href="#custom">Custom</a>
+      <a href="#vouches">Bewertungen</a>
+    </div>
+    <a class="btn btn-gold btn-sm discord" href="#">Discord beitreten</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">HugoSMP · Service Center</span>
+    <h1>Dein Service&#8209;Team auf <em>HugoSMP</em>.</h1>
+    <p class="lead">Map-Arts, AFK-Service mit 22h Uptime für deine Farmen und Spawner-Handel – schnell, sicher und komplett per Discord-Ticket abgewickelt.</p>
+    <div class="cta">
+      <a class="btn btn-gold discord" href="#">Ticket im Discord öffnen</a>
+      <a class="btn btn-ghost" href="#services">Services ansehen</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="st-rating">–</b><span>Ø Bewertung</span></div>
+      <div class="stat"><b id="st-vouches">0</b><span>Vouches</span></div>
+      <div class="stat"><b id="st-services">0</b><span>Aktive Services</span></div>
+      <div class="stat"><b>22h</b><span>AFK-Uptime pro Tag</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="services">
+  <div class="wrap">
+    <div class="head"><div><h2>Services</h2><p>Wähle im Discord den passenden Service aus – es öffnet sich automatisch ein Ticket mit dem zuständigen Team.</p></div></div>
+    <div class="grid" id="services-list"></div>
+  </div>
+</section>
+
+<section id="spawner">
+  <div class="wrap">
+    <div class="head"><div><h2>Spawner-Handel</h2><p><b>Du erhältst</b> = so viel zahlen wir dir für deinen Spawner. <b>Du zahlst</b> = so viel kostet ein Spawner bei uns.</p></div></div>
+    <div class="grid spawners" id="spawner-list"></div>
+  </div>
+</section>
+
+<section id="maparts">
+  <div class="wrap">
+    <div class="head"><div><h2>Map-Arts kaufen</h2><p>Fertige Map-Arts aus unserem Bestand. Kauf läuft über ein Ticket – bei Drittbesitzern ist der Besitzer direkt mit dabei.</p></div></div>
+    <div class="grid" id="mapart-list"></div>
+  </div>
+</section>
+
+<section id="custom">
+  <div class="wrap">
+    <div class="head"><div><h2>Custom Map-Art</h2><p>Dein eigenes Motiv als Map-Art. Preise gelten pro 128×128 Map – der Endpreis wird im Ticket bestätigt.</p></div></div>
+    <div class="grid" id="custom-list"></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="head"><div><h2>So funktioniert's</h2></div></div>
+    <div class="grid steps">
+      <div class="card step"><h3>Ticket öffnen</h3><p>Im Discord den Service auswählen und kurz beschreiben, was du brauchst.</p></div>
+      <div class="card step"><h3>Absprechen</h3><p>Ein Teammitglied meldet sich, klärt Details und bestätigt den Preis.</p></div>
+      <div class="card step"><h3>Übergabe ingame</h3><p>Wir erledigen alles auf HugoSMP – danach kannst du uns per DM bewerten.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="vouches">
+  <div class="wrap">
+    <div class="head"><div><h2>Bewertungen</h2><p>Echte Vouches unserer Kunden – direkt aus dem Discord.</p></div></div>
+    <div class="vouches" id="vouch-list"></div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <div class="card">
+      <h2>Bereit für deinen Service?</h2>
+      <p>Tritt dem Discord bei und öffne ein Ticket – wir kümmern uns um den Rest.</p>
+      <a class="btn btn-gold discord" href="#">Discord beitreten</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="year"></span> HugoSMP Service Center</span>
+    <span>Kein offizielles Angebot von Mojang oder Microsoft.</span>
+  </div>
+</footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Discord-Markdown light: **fett**, Zeilenumbrüche
+  const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+  const empty = (t) => `<div class="empty">${t}</div>`;
+  const pill = (label, color) => `<span class="pill" style="--c:${color}">${esc(label)}</span>`;
+  const isStop = (v) => !v || /^stop$/i.test(String(v).trim());
+
+  // Isometrischer Spawner-Käfig mit Mob-Farbe (wie im Discord-Panel)
+  function cube(color) {
+    const face = (p0, p1, p3, fill, mob) => {
+      const at = (u, v) => [p0[0] + u * (p1[0] - p0[0]) + v * (p3[0] - p0[0]), p0[1] + u * (p1[1] - p0[1]) + v * (p3[1] - p0[1])];
+      const poly = (pts, f) => `<polygon points="${pts.map((p) => p.join(',')).join(' ')}" fill="${f}"/>`;
+      let out = poly([at(0, 0), at(1, 0), at(1, 1), at(0, 1)], fill);
+      if (mob) out += poly([at(.25, .25), at(.75, .25), at(.75, .75), at(.25, .75)], mob);
+      for (let i = 0; i <= 4; i++) {
+        const t = i / 4, a = at(t, 0), b = at(t, 1), c = at(0, t), d = at(1, t);
+        out += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/><line x1="${c[0]}" y1="${c[1]}" x2="${d[0]}" y2="${d[1]}"/>`;
+      }
+      return out;
+    };
+    const c = /^#[0-9a-f]{6}$/i.test(color) ? color : '#9e9e9e';
+    return `<svg viewBox="0 0 100 100" aria-hidden="true"><g stroke="#4b5bb0" stroke-width="1.2">${
+      face([10, 30], [50, 10], [50, 50], '#1c2142') +
+      face([10, 30], [50, 50], [10, 70], '#141834', c) +
+      face([50, 50], [90, 30], [50, 90], '#191d3c', c)}</g></svg>`;
+  }
+
+  function render(d) {
+    if (d.discord) document.querySelectorAll('.discord').forEach((a) => { a.href = d.discord; a.target = '_blank'; a.rel = 'noopener'; });
+
+    $('st-rating').textContent = d.stats.rating ? `${d.stats.rating.toLocaleString('de-DE')} ★` : '–';
+    $('st-vouches').textContent = d.stats.vouches.toLocaleString('de-DE');
+    $('st-services').textContent = d.services.filter((s) => s.enabled).length;
+
+    $('services-list').innerHTML = d.services.map((s) => {
+      const full = s.limit && s.open >= s.limit;
+      const status = !s.enabled ? pill('Pausiert', 'var(--grey)')
+        : full ? pill(`${s.open}/${s.limit} Tickets – Limit erreicht`, 'var(--gold)')
+        : pill(s.limit ? `Verfügbar · ${s.open}/${s.limit} Tickets` : 'Verfügbar', 'var(--green)');
+      return `<div class="card svc${s.enabled ? '' : ' off'}">
+        <div class="svc-emoji">${esc(s.emoji)}</div>
+        <h3>${esc(s.name)}</h3><p>${md(s.description)}</p>${status}</div>`;
+    }).join('') || empty('Aktuell keine Services.');
+
+    const statusColor = { 'ANKAUF & VERKAUF': 'var(--green)', PAUSIERT: 'var(--grey)' };
+    $('spawner-list').innerHTML = d.spawners.map((s) => `<div class="card sp">
+      ${cube(s.color)}<h3>${esc(s.name)}</h3>
+      <div class="prices">
+        <div><small>Du erhältst</small><b class="${isStop(s.get) ? 'stop' : ''}">${isStop(s.get) ? 'STOP' : esc(s.get)}</b></div>
+        <div><small>Du zahlst</small><b class="${isStop(s.pay) ? 'stop' : ''}">${isStop(s.pay) ? 'STOP' : esc(s.pay)}</b></div>
+      </div>${pill(s.status.label, statusColor[s.status.label] || 'var(--red)')}</div>`).join('') || empty('Aktuell keine Spawner im Handel.');
+
+    $('mapart-list').innerHTML = d.maparts.map((m) => `<div class="card mapart">
+      <div class="img">${m.image ? `<img src="${esc(m.image)}" alt="${esc(m.name)}" loading="lazy">` : '🖼️'}</div>
+      <div class="body"><h3>${esc(m.name)}</h3>
+        <div class="meta"><span>📐 ${esc(m.size)}</span>${m.owner ? `<span>👤 ${esc(m.owner)}${m.thirdParty ? ' · 3T' : ''}</span>` : ''}</div>
+        <div class="price-row"><span class="price">${esc(m.price)}</span><a class="btn btn-gold btn-sm discord" href="${esc(d.discord || '#')}">Kaufen</a></div>
+      </div></div>`).join('') || empty('Gerade sind keine Map-Arts verfügbar – schau bald wieder vorbei oder bestell eine Custom Map-Art.');
+
+    $('custom-list').innerHTML = d.custom.map((c) => `<div class="card custom">
+      <div class="svc-emoji">${esc(c.emoji)}</div><h3>${esc(c.label)}</h3><p>${esc(c.desc)}</p>
+      <div class="price">${!c.price || c.price === '0' ? 'Auf Anfrage' : `${esc(c.price)} <small>/ Map</small>`}</div></div>`).join('');
+
+    $('vouch-list').innerHTML = d.vouches.map((v) => `<div class="card vouch">
+      <span class="stars" aria-label="${v.stars} von 5 Sternen">${'★'.repeat(v.stars)}${'☆'.repeat(5 - v.stars)}</span>
+      <p>${esc(v.text)}</p>
+      <div class="who"><img src="${esc(v.avatar)}" alt="" loading="lazy"><div><b>${esc(v.user)}</b><small>${esc(v.service)} · ${new Date(v.date).toLocaleDateString('de-DE')}</small></div></div>
+    </div>`).join('') || empty('Noch keine Bewertungen – sei der Erste!');
+  }
+
+  $('year').textContent = new Date().getFullYear();
+  fetch('/api/data').then((r) => r.json()).then(render).catch(() => {
+    ['services-list', 'spawner-list', 'mapart-list', 'custom-list', 'vouch-list'].forEach((id) => { $(id).innerHTML = empty('Daten konnten nicht geladen werden.'); });
+  });
+</script>
+</body>
+</html>

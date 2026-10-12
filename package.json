@@ -1,0 +1,15 @@
+{
+  "name": "hugosmp-service-center",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "web": "node -e \"require('./src/web').start()\"",
+    "test": "node src/test.js"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "discord.js": "^14.16.3"
+  }
+}
