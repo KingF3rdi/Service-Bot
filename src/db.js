@@ -16,6 +16,7 @@ const defaults = {
       description: 'Lass dir dein eigenes Map-Art bauen – passend zu deinem Motiv und Format.',
     },
   ],
+  afkPrices: { '22h': '0', '20h': '0', deluxe: '5M' },
   customPrices: { carpet2d: '0', block2d: '0', carpet3d: '0', block3d: '0' },
   spawners: [
     { name: 'Skeleton', get: '6.5M', pay: 'STOP', color: '#d8d8d8' },

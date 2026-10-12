@@ -86,7 +86,44 @@ function spawnerPanel() {
   };
 }
 
-const PANELS = { service: servicePanel, custom: customPanel, spawner: spawnerPanel };
+const AFK_ID = 'afk-service'; // Rollen & Ticket-Limit kommen vom gleichnamigen Service
+const AFK_UPTIMES = ['22h', '20h'];
+const AFK_SELL = { order: 'Verkauf per /order', sell: 'Verkauf per /sell' };
+const priceOr = (v) => (!v || v === '0' ? 'Auf Anfrage' : v);
+const afkLabel = (pkg) => { const [tier, up] = pkg.split('-'); return `${tier === 'deluxe' ? 'Deluxe' : 'Standard'} · ${up} Uptime`; };
+
+function afkPanel() {
+  const p = db.data.afkPrices;
+  const e = embed().setTitle('💤 AFK Service').setDescription([
+    'Wir halten deine Farmen und Spawner am Laufen – du musst dafür nicht selbst online sein. Die Erträge verkaufen wir für dich per **/order** oder **/sell**.',
+    `### ⏱️ Standard\nUptime wahlweise **22h** oder **20h** pro Tag.\n💰 22h: **${priceOr(p['22h'])}** · 20h: **${priceOr(p['20h'])}**`,
+    `### 💎 Deluxe\nAlles aus Standard **plus Farm-Refill** – wir füllen deine Farm regelmäßig wieder auf.\n💰 **+${p.deluxe}** Aufpreis **+ Material**`,
+    '-# Wähle unten dein Paket – danach die Verkaufsart, dann öffnet sich automatisch ein Ticket.',
+  ].join('\n\n'));
+  const menu = new StringSelectMenuBuilder().setCustomId('afk').setPlaceholder('Paket auswählen …').addOptions(
+    ['standard', 'deluxe'].flatMap((tier) => AFK_UPTIMES.map((up) => ({
+      label: afkLabel(`${tier}-${up}`), value: `${tier}-${up}`, emoji: tier === 'deluxe' ? '💎' : '⏱️',
+      description: tier === 'deluxe' ? `${priceOr(p[up])} + ${p.deluxe} + Material · mit Farm-Refill` : priceOr(p[up]),
+    }))));
+  return { embeds: [e], components: [row(menu)] };
+}
+
+function mapartPanel() {
+  const list = Object.entries(db.data.maparts).reverse().slice(0, 25);
+  const e = embed().setTitle('🖼️ Map-Arts kaufen').setDescription([
+    'Fertige Map-Arts aus unserem Bestand – wähle unten eine aus und es öffnet sich ein Ticket.',
+    ...(list.length
+      ? list.map(([, m]) => `### ${m.name}\n💰 **${m.price}** · 📐 ${m.size} · 👤 <@${m.ownerId}>${m.thirdParty ? ' · 3T' : ''}`)
+      : ['*Gerade sind keine Map-Arts verfügbar – schau bald wieder vorbei oder bestell eine Custom Map-Art.*']),
+    '-# Bilder findest du in den einzelnen Map-Art-Posts und auf unserer Website.',
+  ].join('\n\n'));
+  if (!list.length) return { embeds: [e], components: [] };
+  const menu = new StringSelectMenuBuilder().setCustomId('mapartsel').setPlaceholder('Map-Art auswählen …')
+    .addOptions(list.map(([id, m]) => ({ label: m.name.slice(0, 100), value: id, emoji: '🖼️', description: `${m.price} · ${m.size}`.slice(0, 100) })));
+  return { embeds: [e], components: [row(menu)] };
+}
+
+const PANELS = { service: servicePanel, custom: customPanel, spawner: spawnerPanel, afk: afkPanel, mapart: mapartPanel };
 
 async function refresh(key) {
   const p = db.data.panels[key];
@@ -148,7 +185,12 @@ const admin = P.ManageGuild;
 const commands = [
   new SlashCommandBuilder().setName('panel').setDescription('Panel in diesem Kanal senden').setDefaultMemberPermissions(admin)
     .addStringOption((o) => o.setName('typ').setDescription('Welches Panel?').setRequired(true)
-      .addChoices({ name: 'Services', value: 'service' }, { name: 'Custom Map-Art', value: 'custom' }, { name: 'Spawner Handel', value: 'spawner' })),
+      .addChoices({ name: 'Services', value: 'service' }, { name: 'Custom Map-Art', value: 'custom' }, { name: 'Spawner Handel', value: 'spawner' }, { name: 'AFK Service', value: 'afk' }, { name: 'Map-Arts', value: 'mapart' })),
+
+  new SlashCommandBuilder().setName('afkpreis').setDescription('Preise für das AFK-Panel setzen').setDefaultMemberPermissions(admin)
+    .addStringOption((o) => o.setName('paket').setDescription('Was?').setRequired(true)
+      .addChoices({ name: '22h Uptime', value: '22h' }, { name: '20h Uptime', value: '20h' }, { name: 'Deluxe-Aufpreis (Farm-Refill)', value: 'deluxe' }))
+    .addStringOption((o) => o.setName('preis').setDescription('z. B. 3M / Woche').setRequired(true).setMaxLength(40)),
 
   new SlashCommandBuilder().setName('service').setDescription('Services verwalten').setDefaultMemberPermissions(admin)
     .addSubcommand((s) => s.setName('add').setDescription('Service hinzufügen')
@@ -262,7 +304,15 @@ async function onCommand(i) {
     });
     db.data.maparts[id] = { ...m, messageId: msg.id };
     db.save();
+    await refresh('mapart');
     return i.editReply('✅ Map-Art gepostet.');
+  }
+
+  if (i.commandName === 'afkpreis') {
+    db.data.afkPrices[i.options.getString('paket')] = i.options.getString('preis');
+    db.save();
+    await refresh('afk');
+    return i.reply({ content: '✅ AFK-Preis gespeichert.', ephemeral: true });
   }
 
   if (i.commandName === 'custompreis') {
@@ -315,6 +365,26 @@ async function onComponent(i) {
         s.id === 'afk-service' ? 'z. B. Spawner-Farm bei X/Z, gewünschte Dauer …' : undefined)));
   }
 
+  if (id === 'afk') {
+    const s = findService(AFK_ID);
+    if (s && !s.enabled) return i.reply({ content: '🔴 Der AFK Service ist derzeit pausiert.', ephemeral: true });
+    if (s?.limit && openCount(AFK_ID) >= s.limit) return i.reply({ content: '🟡 Der AFK Service hat das Ticket-Limit erreicht. Versuch es später erneut.', ephemeral: true });
+    const pkg = i.values[0];
+    return i.reply({
+      ephemeral: true,
+      content: `**${afkLabel(pkg)}** – wie sollen wir die Erträge verkaufen?`,
+      components: [row(...Object.entries(AFK_SELL).map(([k, label]) =>
+        new ButtonBuilder().setCustomId(`afksell:${pkg}:${k}`).setLabel(label).setStyle(ButtonStyle.Primary)))],
+    });
+  }
+
+  if (id === 'afksell') {
+    return i.showModal(modal(`afkm:${arg}`, `AFK · ${afkLabel(rest[0])}`,
+      input('ign', 'Minecraft-Name'),
+      input('farm', 'Welche Farm / Spawner? (inkl. Koordinaten)', TextInputStyle.Paragraph, true, 'z. B. Eisenfarm bei X 1200 / Z -340'),
+      input('dauer', 'Wie lange?', TextInputStyle.Short, true, 'z. B. 7 Tage')));
+  }
+
   if (id === 'custom') {
     const t = CUSTOM_TYPES[i.values[0]];
     return i.showModal(modal(`customm:${i.values[0]}`, `Custom Map-Art · ${t.label}`,
@@ -332,8 +402,8 @@ async function onComponent(i) {
       input('amount', 'Anzahl', TextInputStyle.Short, true, 'z. B. 3')));
   }
 
-  if (id === 'mapart') {
-    const m = db.data.maparts[arg];
+  if (id === 'mapart' || id === 'mapartsel') {
+    const m = db.data.maparts[id === 'mapart' ? arg : i.values[0]];
     if (!m) return i.reply({ content: '❌ Diese Map-Art ist nicht mehr verfügbar.', ephemeral: true });
     await i.deferReply({ ephemeral: true });
     const info = embed().setDescription(`${i.user} möchte diese Map-Art kaufen.\nEin Teammitglied meldet sich gleich bei dir.`)
@@ -343,7 +413,7 @@ async function onComponent(i) {
         { name: '📐 Größe', value: m.size, inline: true },
         { name: '👤 Besitzer', value: `<@${m.ownerId}>${m.thirdParty ? ' · 3T' : ''}`, inline: true },
       );
-    const img = i.message.embeds[0]?.image?.url;
+    const img = id === 'mapart' && i.message.embeds[0]?.image?.url;
     if (img) info.setThumbnail(img);
     return openTicket(i, {
       kind: 'mapart', label: `Map-Art: ${m.name}`, prefix: 'mapart', info,
@@ -402,6 +472,28 @@ async function onModal(i) {
       kind: 'service', serviceId: s.id, label: s.name, prefix: slug(s.name).slice(0, 20) || 'service', roleIds: s.roleIds,
       info: embed().setDescription(`${s.emoji} **${s.name}**\nEin Teammitglied meldet sich gleich bei dir.`)
         .addFields({ name: 'Minecraft-Name', value: f('ign') }, { name: 'Anliegen', value: f('details') }),
+    });
+  }
+
+  if (id === 'afkm') {
+    const [pkg, sell] = rest;
+    const [tier, up] = pkg.split('-');
+    const p = db.data.afkPrices;
+    const s = findService(AFK_ID);
+    if (s && !s.enabled) return i.editReply('🔴 Der AFK Service ist derzeit pausiert.');
+    if (s?.limit && openCount(AFK_ID) >= s.limit) return i.editReply('🟡 Das Ticket-Limit wurde gerade erreicht.');
+    const info = embed().setDescription(`💤 **AFK Service · ${afkLabel(pkg)}**\nEin Teammitglied meldet sich gleich bei dir.`).addFields(
+      { name: 'Minecraft-Name', value: f('ign'), inline: true },
+      { name: 'Uptime', value: `${up} / Tag`, inline: true },
+      { name: 'Verkauf', value: AFK_SELL[sell], inline: true },
+      { name: 'Preis', value: tier === 'deluxe' ? `${priceOr(p[up])} + ${p.deluxe} + Material` : priceOr(p[up]), inline: true },
+      { name: 'Farm-Refill', value: tier === 'deluxe' ? '✅ Ja (Deluxe)' : '❌ Nein', inline: true },
+      { name: 'Dauer', value: f('dauer'), inline: true },
+      { name: 'Farm / Spawner', value: f('farm') },
+    );
+    return openTicket(i, {
+      kind: 'service', serviceId: AFK_ID, label: `AFK ${afkLabel(pkg)}`, prefix: `afk-${tier}`,
+      roleIds: s?.roleIds ?? [], info,
     });
   }
 
@@ -489,7 +581,9 @@ client.on('messageDelete', (msg) => {
   if (img) fs.rm(path.join(web.UPLOADS, img), () => {});
   delete db.data.maparts[id];
   db.save();
+  refresh('mapart');
 });
 
 web.start();
 client.login(env.TOKEN);
+module.exports = { PANELS };
