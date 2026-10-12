@@ -5,6 +5,9 @@ const {
 } = require('discord.js');
 const fs = require('node:fs');
 const path = require('node:path');
+// .env laden – damit funktioniert auch Startdatei `src/index.js` beim Hoster
+const ENV = path.join(__dirname, '..', '.env');
+if (!process.env.TOKEN && fs.existsSync(ENV)) process.loadEnvFile(ENV);
 const db = require('./db');
 const { renderSpawnerPanel } = require('./spawnerImage');
 const { isStop, parseMoney, fmtMoney, CUSTOM_TYPES } = require('./util');
