@@ -196,7 +196,8 @@ async function openTicket(i, { kind, serviceId = null, label, prefix, emoji = TI
     // z. B. "⚡afk-209" – die Nummer zeigt neuen Kunden, wie viele Tickets es schon gab
     name: `${emoji.startsWith('<') ? '' : emoji}${prefix}-${number}`,
     type: ChannelType.GuildText,
-    parent: env.TICKET_CATEGORY_ID || null,
+    // Eigene Kategorie pro Bereich (/ticketkategorie), sonst Standard; gelöschte Kategorie -> Standard
+    parent: [db.data.categories[prefix], env.TICKET_CATEGORY_ID].find((id) => id && g.channels.cache.has(id)) ?? null,
     permissionOverwrites: [
       { id: g.roles.everyone.id, deny: [P.ViewChannel] },
       { id: client.user.id, allow: [...allow, P.ManageChannels], type: OverwriteType.Member },
@@ -289,9 +290,9 @@ const commands = [
     .addSubcommand((s) => s.setName('remove').setDescription('Spawner entfernen')
       .addStringOption((o) => o.setName('name').setDescription('Spawner').setRequired(true).setAutocomplete(true))),
 
-  new SlashCommandBuilder().setName('ticketnummer').setDescription('Nächste Ticketnummer für einen Bereich setzen').setDefaultMemberPermissions(admin)
-    .addStringOption((o) => o.setName('bereich').setDescription('z. B. afk').setRequired(true).setAutocomplete(true))
-    .addIntegerOption((o) => o.setName('naechste').setDescription('Nummer des nächsten Tickets, z. B. 210').setRequired(true).setMinValue(1)),
+  new SlashCommandBuilder().setName('ticketkategorie').setDescription('Eigene Discord-Kategorie für einen Ticket-Bereich').setDefaultMemberPermissions(admin)
+    .addStringOption((o) => o.setName('bereich').setDescription('z. B. afk, spawner, custom-texture-pack').setRequired(true).setAutocomplete(true))
+    .addChannelOption((o) => o.setName('kategorie').setDescription('Leer lassen = Standard-Kategorie (TICKET_CATEGORY_ID)').addChannelTypes(ChannelType.GuildCategory)),
 
   new SlashCommandBuilder().setName('vouch').setDescription('Bewertung per DM abgeben'),
 ];
@@ -436,13 +437,14 @@ async function onCommand(i) {
     return i.editReply('✅ Spawner-Panel aktualisiert.');
   }
 
-  if (i.commandName === 'ticketnummer') {
+  if (i.commandName === 'ticketkategorie') {
     const key = i.options.getString('bereich');
     if (!ticketTypes().includes(key)) return i.reply({ content: `❌ Unbekannter Bereich. Möglich: ${ticketTypes().join(', ')}`, ephemeral: true });
-    const next = i.options.getInteger('naechste');
-    db.data.counters[key] = next - 1;
+    const cat = i.options.getChannel('kategorie');
+    if (cat) db.data.categories[key] = cat.id;
+    else delete db.data.categories[key];
     db.save();
-    return i.reply({ content: `✅ Das nächste **${key}**-Ticket heißt \`${TICKET_TYPES[key] ?? ''}${key}-${next}\`.`, ephemeral: true });
+    return i.reply({ content: `✅ **${key}**-Tickets landen jetzt in ${cat ? `**${cat.name}**` : 'der Standard-Kategorie'}.`, ephemeral: true });
   }
 
   if (i.commandName === 'vouch') {
@@ -720,7 +722,10 @@ async function onModal(i) {
 async function onAutocomplete(i) {
   const q = i.options.getFocused().toLowerCase();
   const list = i.commandName === 'spawner' ? db.data.spawners.map((s) => ({ name: s.name, value: s.name }))
-    : i.commandName === 'ticketnummer' ? ticketTypes().map((k) => ({ name: `${k} (aktuell #${db.data.counters[k] ?? 0})`, value: k }))
+    : i.commandName === 'ticketkategorie' ? ticketTypes().map((k) => {
+      const cat = db.data.categories[k] && i.guild.channels.cache.get(db.data.categories[k]);
+      return { name: `${TICKET_TYPES[k] ?? '🎫'} ${k} → ${cat ? cat.name : 'Standard'}`.slice(0, 100), value: k };
+    })
     : db.data.services.map((s) => ({ name: `${s.emoji} ${s.name}`, value: s.id }));
   return i.respond(list.filter((o) => o.name.toLowerCase().includes(q)).slice(0, 25));
 }
