@@ -14,6 +14,8 @@ const { isStop, parseMoney, fmtMoney, CUSTOM_TYPES } = require('./util');
 const web = require('./web');
 
 const env = process.env;
+// Einstellungen aus /setup haben Vorrang vor der .env
+const cfg = (key) => db.data.config[key] || env[key];
 const BRAND = 0xf4b400;
 const BRAND_NAME = 'HugoSMP Service Center';
 const P = PermissionFlagsBits;
@@ -197,7 +199,7 @@ async function openTicket(i, { kind, serviceId = null, label, prefix, emoji = TI
     name: `${emoji.startsWith('<') ? '' : emoji}${prefix}-${number}`,
     type: ChannelType.GuildText,
     // Eigene Kategorie pro Bereich (/ticketkategorie), sonst Standard; gelöschte Kategorie -> Standard
-    parent: [db.data.categories[prefix], env.TICKET_CATEGORY_ID].find((id) => id && g.channels.cache.has(id)) ?? null,
+    parent: [db.data.categories[prefix], cfg('TICKET_CATEGORY_ID')].find((id) => id && g.channels.cache.has(id)) ?? null,
     permissionOverwrites: [
       { id: g.roles.everyone.id, deny: [P.ViewChannel] },
       { id: client.user.id, allow: [...allow, P.ManageChannels], type: OverwriteType.Member },
@@ -294,8 +296,43 @@ const commands = [
     .addStringOption((o) => o.setName('bereich').setDescription('z. B. afk, spawner, custom-texture-pack').setRequired(true).setAutocomplete(true))
     .addChannelOption((o) => o.setName('kategorie').setDescription('Leer lassen = Standard-Kategorie (TICKET_CATEGORY_ID)').addChannelTypes(ChannelType.GuildCategory)),
 
+  new SlashCommandBuilder().setName('setup').setDescription('Kanäle & Rollen einstellen – ohne Optionen: aktuelle Einstellungen anzeigen').setDefaultMemberPermissions(admin)
+    .addChannelOption((o) => o.setName('ticketkategorie').setDescription('Standard-Kategorie für Tickets').addChannelTypes(ChannelType.GuildCategory))
+    .addChannelOption((o) => o.setName('vouchkanal').setDescription('Kanal, in den Vouches gepostet werden').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
+    .addRoleOption((o) => o.setName('afk_rolle').setDescription('Support-Rolle für AFK-Tickets'))
+    .addRoleOption((o) => o.setName('mapart_rolle').setDescription('Support-Rolle für Map-Art- & Custom-Map-Art-Tickets'))
+    .addRoleOption((o) => o.setName('spawner_rolle').setDescription('Support-Rolle für Spawner-Tickets & Preis-Button'))
+    .addRoleOption((o) => o.setName('schematic_rolle').setDescription('Support-Rolle für Schematic-Tickets & Datei-Auslieferung'))
+    .addRoleOption((o) => o.setName('support_rolle').setDescription('Rolle für allgemeine Support-Tickets')),
+
+  new SlashCommandBuilder().setName('vouchanfrage').setDescription('Vouch-Anfrage per DM an einen Kunden senden').setDefaultMemberPermissions(P.ManageMessages)
+    .addUserOption((o) => o.setName('kunde').setDescription('Wer soll bewerten?').setRequired(true))
+    .addStringOption((o) => o.setName('service').setDescription('z. B. AFK Service – Standard: aktuelles Ticket').setMaxLength(60)),
+
   new SlashCommandBuilder().setName('vouch').setDescription('Bewertung per DM abgeben'),
 ];
+
+const SETUP = {
+  ticketkategorie: ['TICKET_CATEGORY_ID', 'Ticket-Kategorie (Standard)', '#'],
+  vouchkanal: ['VOUCH_CHANNEL_ID', 'Vouch-Kanal', '#'],
+  mapart_rolle: ['MAPART_ROLE_ID', 'Map-Art-Rolle', '@&'],
+  spawner_rolle: ['SPAWNER_ROLE_ID', 'Spawner-Rolle', '@&'],
+  schematic_rolle: ['SCHEMATIC_ROLE_ID', 'Schematic-Rolle', '@&'],
+  support_rolle: ['SUPPORT_ROLE_ID', 'Support-Rolle', '@&'],
+};
+
+function setupOverview() {
+  const val = (id, p) => (id ? `<${p}${id}>` : '❌ nicht gesetzt');
+  const afk = findService(AFK_ID);
+  const lines = Object.values(SETUP).map(([key, label, p]) => `**${label}:** ${val(cfg(key), p)}`);
+  lines.push(`**AFK-Rollen:** ${afk?.roleIds.length ? afk.roleIds.map((r) => `<@&${r}>`).join(', ') : '❌ nicht gesetzt'}`);
+  const cats = Object.entries(db.data.categories);
+  if (cats.length) lines.push(`**Eigene Kategorien:** ${cats.map(([k, id]) => `${k} → <#${id}>`).join(', ')}`);
+  return embed().setTitle('⚙️ Setup').setDescription([
+    lines.join('\n'),
+    '-# Ändern: `/setup` mit Optionen · Kategorie pro Bereich: `/ticketkategorie` · Panels posten: `/panel`',
+  ].join('\n\n'));
+}
 
 async function onCommand(i) {
   const sub = i.options.getSubcommand(false);
@@ -447,6 +484,25 @@ async function onCommand(i) {
     return i.reply({ content: `✅ **${key}**-Tickets landen jetzt in ${cat ? `**${cat.name}**` : 'der Standard-Kategorie'}.`, ephemeral: true });
   }
 
+  if (i.commandName === 'setup') {
+    for (const [opt, [key]] of Object.entries(SETUP)) {
+      const id = i.options.get(opt)?.value; // Kanal- oder Rollen-ID
+      if (id) db.data.config[key] = id;
+    }
+    const afkRole = i.options.getRole('afk_rolle');
+    const afk = findService(AFK_ID);
+    if (afkRole && afk && !afk.roleIds.includes(afkRole.id)) afk.roleIds.push(afkRole.id);
+    db.save();
+    return i.reply({ embeds: [setupOverview()], ephemeral: true });
+  }
+
+  if (i.commandName === 'vouchanfrage') {
+    const user = i.options.getUser('kunde');
+    const label = i.options.getString('service') ?? db.data.open[i.channelId]?.label ?? BRAND_NAME;
+    const ok = await user.send(vouchPrompt(label)).catch(() => null);
+    return i.reply({ content: ok ? `📬 Vouch-Anfrage an ${user} gesendet (${label}).` : `❌ ${user} hat DMs deaktiviert.`, ephemeral: true });
+  }
+
   if (i.commandName === 'vouch') {
     const ok = await i.user.send(vouchPrompt(BRAND_NAME)).catch(() => null);
     return i.reply({ content: ok ? '📬 Schau in deine DMs!' : '❌ Ich kann dir keine DM senden – bitte DMs aktivieren.', ephemeral: true });
@@ -500,7 +556,7 @@ async function onComponent(i) {
   }
 
   if (id === 'spawneredit') {
-    if (!isTeam(i, env.SPAWNER_ROLE_ID)) return i.reply({ content: '⛔ Nur das Team kann Spawner-Preise ändern.', ephemeral: true });
+    if (!isTeam(i, cfg('SPAWNER_ROLE_ID'))) return i.reply({ content: '⛔ Nur das Team kann Spawner-Preise ändern.', ephemeral: true });
     // Button -> Auswahl, Auswahl -> Formular mit aktuellen Werten
     if (i.isButton()) {
       const menu = new StringSelectMenuBuilder().setCustomId('spawneredit').setPlaceholder('Spawner auswählen …').addOptions(
@@ -540,7 +596,7 @@ async function onComponent(i) {
     if (img) info.setThumbnail(img);
     return openTicket(i, {
       kind: 'mapart', label: `Map-Art: ${m.name}`, prefix: 'mapart', info,
-      roleIds: [env.MAPART_ROLE_ID], extraUserIds: m.thirdParty ? [m.ownerId] : [],
+      roleIds: [cfg('MAPART_ROLE_ID')], extraUserIds: m.thirdParty ? [m.ownerId] : [],
     });
   }
 
@@ -554,13 +610,13 @@ async function onComponent(i) {
     const img = id === 'schem' && i.message.embeds[0]?.image?.url;
     if (img) info.setThumbnail(img);
     return openTicket(i, {
-      kind: 'schematic', label: `Schematic: ${s.name}`, prefix: 'schematic', info, roleIds: [env.SCHEMATIC_ROLE_ID],
+      kind: 'schematic', label: `Schematic: ${s.name}`, prefix: 'schematic', info, roleIds: [cfg('SCHEMATIC_ROLE_ID')],
       buttons: [new ButtonBuilder().setCustomId(`schemsend:${sid}`).setLabel('Bezahlt – Datei senden').setEmoji('📤').setStyle(ButtonStyle.Success)],
     });
   }
 
   if (id === 'schemsend') {
-    if (!isTeam(i, env.SCHEMATIC_ROLE_ID)) return i.reply({ content: '⛔ Nur das Team kann die Datei ausliefern.', ephemeral: true });
+    if (!isTeam(i, cfg('SCHEMATIC_ROLE_ID'))) return i.reply({ content: '⛔ Nur das Team kann die Datei ausliefern.', ephemeral: true });
     const s = db.data.schematics[arg];
     const t = db.data.open[i.channelId];
     const file = s && path.join(FILES, s.file);
@@ -610,7 +666,7 @@ async function onModal(i) {
 
   if (id === 'vouchm') {
     const [stars, ...l] = rest;
-    const ch = await client.channels.fetch(env.VOUCH_CHANNEL_ID).catch(() => null);
+    const ch = await client.channels.fetch(cfg('VOUCH_CHANNEL_ID')).catch(() => null);
     if (!ch) return i.reply({ content: '❌ Vouch-Kanal nicht gefunden – bitte melde dich beim Team.', ephemeral: true });
     await ch.send({
       embeds: [embed().setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() })
@@ -631,7 +687,7 @@ async function onModal(i) {
   if (id === 'supportm') {
     const t = SUPPORT_TOPICS[arg];
     return openTicket(i, {
-      kind: 'support', label: `Support · ${t.label}`, prefix: 'support', roleIds: [env.SUPPORT_ROLE_ID],
+      kind: 'support', label: `Support · ${t.label}`, prefix: 'support', roleIds: [cfg('SUPPORT_ROLE_ID')],
       info: embed().setDescription(`${t.emoji} **${t.label}**\nEin Supporter meldet sich gleich bei dir.`).addFields(
         { name: 'Minecraft-Name', value: f('ign'), inline: true },
         { name: 'Betreff', value: f('betreff'), inline: true },
@@ -641,7 +697,7 @@ async function onModal(i) {
   }
 
   if (id === 'spawnerset') {
-    if (!isTeam(i, env.SPAWNER_ROLE_ID)) return i.editReply('⛔ Nur das Team kann Spawner-Preise ändern.');
+    if (!isTeam(i, cfg('SPAWNER_ROLE_ID'))) return i.editReply('⛔ Nur das Team kann Spawner-Preise ändern.');
     const color = f('color').trim();
     if (color && !/^#[0-9a-f]{6}$/i.test(color)) return i.editReply('❌ Farbe muss so aussehen: `#4caf50`');
     const name = f('name').trim();
@@ -698,7 +754,7 @@ async function onModal(i) {
       { name: 'Motiv', value: f('motiv') },
     );
     if (f('notes')) info.addFields({ name: 'Anmerkungen', value: f('notes') });
-    return openTicket(i, { kind: 'custom', label: `Custom Map-Art · ${t.label}`, prefix: 'custom', roleIds: [env.MAPART_ROLE_ID], info });
+    return openTicket(i, { kind: 'custom', label: `Custom Map-Art · ${t.label}`, prefix: 'custom', roleIds: [cfg('MAPART_ROLE_ID')], info });
   }
 
   if (id === 'spawnerm') {
@@ -708,7 +764,7 @@ async function onModal(i) {
     if (s && isStop(price)) return i.editReply(`⛔ ${s.name}-Spawner ${buy ? 'verkaufen' : 'kaufen'} wir aktuell nicht.`);
     return openTicket(i, {
       kind: `spawner-${arg}`, label: buy ? 'Spawner kaufen' : 'Spawner verkaufen', prefix: 'spawner', emoji: buy ? '🛒' : '💰',
-      roleIds: [env.SPAWNER_ROLE_ID],
+      roleIds: [cfg('SPAWNER_ROLE_ID')],
       info: embed().setDescription('Ein Teammitglied meldet sich gleich bei dir.').addFields(
         { name: 'Minecraft-Name', value: f('ign'), inline: true },
         { name: 'Spawner', value: s?.name ?? f('type'), inline: true },
@@ -783,4 +839,4 @@ client.on('messageDelete', (msg) => {
 
 web.start();
 client.login(env.TOKEN);
-module.exports = { PANELS, commands, openTicket };
+module.exports = { PANELS, commands, openTicket, onCommand };

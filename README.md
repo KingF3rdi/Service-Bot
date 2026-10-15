@@ -14,7 +14,7 @@ Discord-Bot + Website für das HugoSMP Service Center: Map-Arts, AFK-Service (22
 - **Spawner-Handel** – gerendertes Panel, Kauf/Verkauf-Buttons, Preise per Team-Button „Preise aktualisieren“ oder `/spawner set`
 - **Schematics** – `/schematic` mit Vorschaubild + hinterlegter Datei, Übersichts-Panel; Datei wird nach Bezahlung im Ticket per Button ausgeliefert (DM + Ticket)
 - **Support-Tickets** – Panel mit Themen (Frage, Bestellung, Report, Sonstiges)
-- **Vouches per DM** – nach Ticket-Schließung, Veröffentlichung im Vouch-Kanal
+- **Vouches per DM** – automatisch nach Ticket-Schließung oder per `/vouchanfrage @kunde`, Veröffentlichung im Vouch-Kanal
 - **Website** – zeigt Services, Spawner-Preise, Map-Arts, Custom-Preise und Vouches live
 
 ## Setup
@@ -23,9 +23,11 @@ Benötigt Node.js 20+.
 
 ```bash
 npm install
-cp .env.example .env   # Werte eintragen
+cp .env.example .env   # TOKEN + GUILD_ID eintragen
 npm start              # Bot + Website (Port 3000), Hoster: Startdatei index.js
 ```
+
+Dann in Discord `/setup` (Kanäle & Rollen), optional `/ticketkategorie` pro Bereich.
 
 Panels posten: `/panel typ:Services`, `/panel typ:Custom Map-Art`, `/panel typ:Spawner Handel`, `/panel typ:AFK Service`, `/panel typ:Map-Arts`, `/panel typ:Schematics`, `/panel typ:Support`.
 

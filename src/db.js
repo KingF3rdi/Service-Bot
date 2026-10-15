@@ -30,6 +30,7 @@ const defaults = {
   maparts: {}, // id -> { name, price, size, ownerId, ownerName, thirdParty, image, messageId }
   schematics: {}, // id -> { name, price, desc, image, file, fileName, messageId }
   vouches: [], // { user, avatar, stars, text, service, date }
+  config: {}, // per /setup gesetzte Kanal- & Rollen-IDs (Vorrang vor .env)
   counters: {}, // Ticket-Bereich -> letzte vergebene Nummer (startet bei 1)
   categories: {}, // Ticket-Bereich -> Discord-Kategorie-ID
   open: {}, // channelId -> { userId, kind, serviceId, label }
