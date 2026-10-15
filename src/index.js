@@ -175,7 +175,13 @@ async function refresh(key) {
 
 // ---------- Tickets ----------
 
-async function openTicket(i, { kind, serviceId = null, label, prefix, roleIds = [], extraUserIds = [], info, buttons = [] }) {
+// Feste Ticket-Bereiche mit eigenem Zähler; Services aus /service kommen dynamisch dazu
+const TICKET_TYPES = {
+  afk: '⚡', mapart: '🖼️', custom: '🎨', spawner: '🥚', schematic: '📐', support: '🛟',
+};
+const ticketTypes = () => [...Object.keys(TICKET_TYPES), ...db.data.services.map((s) => slug(s.name).slice(0, 20)).filter(Boolean)];
+
+async function openTicket(i, { kind, serviceId = null, label, prefix, emoji = TICKET_TYPES[prefix] ?? '🎫', roleIds = [], extraUserIds = [], info, buttons = [] }) {
   const g = i.guild;
   const dup = Object.entries(db.data.open).find(([, t]) => t.userId === i.user.id && t.kind === kind && t.serviceId === serviceId);
   if (dup) return i.editReply(`Du hast bereits ein offenes Ticket: <#${dup[0]}>`);
@@ -184,9 +190,11 @@ async function openTicket(i, { kind, serviceId = null, label, prefix, roleIds = 
   const roles = roleIds.filter((id) => id && g.roles.cache.has(id));
   const extras = [];
   for (const id of extraUserIds) if (id !== i.user.id && (await g.members.fetch(id).catch(() => null))) extras.push(id);
+  const number = db.data.counters[prefix] = (db.data.counters[prefix] ?? 0) + 1;
 
   const ch = await g.channels.create({
-    name: `${prefix}-${i.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 90),
+    // z. B. "⚡afk-209" – die Nummer zeigt neuen Kunden, wie viele Tickets es schon gab
+    name: `${emoji.startsWith('<') ? '' : emoji}${prefix}-${number}`,
     type: ChannelType.GuildText,
     parent: env.TICKET_CATEGORY_ID || null,
     permissionOverwrites: [
@@ -197,12 +205,12 @@ async function openTicket(i, { kind, serviceId = null, label, prefix, roleIds = 
     ],
   });
 
-  db.data.open[ch.id] = { userId: i.user.id, kind, serviceId, label };
+  db.data.open[ch.id] = { userId: i.user.id, kind, serviceId, label, number };
   db.save();
 
   await ch.send({
     content: [i.user, ...extras.map((id) => `<@${id}>`), ...roles.map((id) => `<@&${id}>`)].join(' '),
-    embeds: [info.setTitle(`🎫 ${label}`)],
+    embeds: [info.setTitle(`${emoji} ${label} · Ticket #${number}`)],
     components: [row(...buttons, new ButtonBuilder().setCustomId('close').setLabel('Ticket schließen').setEmoji('🔒').setStyle(ButtonStyle.Danger))],
   });
   if (serviceId) refresh('service');
@@ -280,6 +288,10 @@ const commands = [
       .addStringOption((o) => o.setName('farbe').setDescription('Mob-Farbe als Hex, z. B. #4caf50')))
     .addSubcommand((s) => s.setName('remove').setDescription('Spawner entfernen')
       .addStringOption((o) => o.setName('name').setDescription('Spawner').setRequired(true).setAutocomplete(true))),
+
+  new SlashCommandBuilder().setName('ticketnummer').setDescription('Nächste Ticketnummer für einen Bereich setzen').setDefaultMemberPermissions(admin)
+    .addStringOption((o) => o.setName('bereich').setDescription('z. B. afk').setRequired(true).setAutocomplete(true))
+    .addIntegerOption((o) => o.setName('naechste').setDescription('Nummer des nächsten Tickets, z. B. 210').setRequired(true).setMinValue(1)),
 
   new SlashCommandBuilder().setName('vouch').setDescription('Bewertung per DM abgeben'),
 ];
@@ -422,6 +434,15 @@ async function onCommand(i) {
     await i.deferReply({ ephemeral: true });
     await refresh('spawner');
     return i.editReply('✅ Spawner-Panel aktualisiert.');
+  }
+
+  if (i.commandName === 'ticketnummer') {
+    const key = i.options.getString('bereich');
+    if (!ticketTypes().includes(key)) return i.reply({ content: `❌ Unbekannter Bereich. Möglich: ${ticketTypes().join(', ')}`, ephemeral: true });
+    const next = i.options.getInteger('naechste');
+    db.data.counters[key] = next - 1;
+    db.save();
+    return i.reply({ content: `✅ Das nächste **${key}**-Ticket heißt \`${TICKET_TYPES[key] ?? ''}${key}-${next}\`.`, ephemeral: true });
   }
 
   if (i.commandName === 'vouch') {
@@ -635,7 +656,7 @@ async function onModal(i) {
     if (!s?.enabled) return i.editReply('❌ Dieser Service ist nicht verfügbar.');
     if (s.limit && openCount(s.id) >= s.limit) return i.editReply('🟡 Das Ticket-Limit wurde gerade erreicht.');
     return openTicket(i, {
-      kind: 'service', serviceId: s.id, label: s.name, prefix: slug(s.name).slice(0, 20) || 'service', roleIds: s.roleIds,
+      kind: 'service', serviceId: s.id, label: s.name, prefix: slug(s.name).slice(0, 20) || 'service', emoji: s.emoji, roleIds: s.roleIds,
       info: embed().setDescription(`${s.emoji} **${s.name}**\nEin Teammitglied meldet sich gleich bei dir.`)
         .addFields({ name: 'Minecraft-Name', value: f('ign') }, { name: 'Anliegen', value: f('details') }),
     });
@@ -658,7 +679,7 @@ async function onModal(i) {
       { name: 'Farm / Spawner', value: f('farm') },
     );
     return openTicket(i, {
-      kind: 'service', serviceId: AFK_ID, label: `AFK ${afkLabel(pkg)}`, prefix: `afk-${tier}`,
+      kind: 'service', serviceId: AFK_ID, label: `AFK ${afkLabel(pkg)}`, prefix: 'afk',
       roleIds: s?.roleIds ?? [], info,
     });
   }
@@ -684,7 +705,7 @@ async function onModal(i) {
     const price = s && (buy ? s.pay : s.get);
     if (s && isStop(price)) return i.editReply(`⛔ ${s.name}-Spawner ${buy ? 'verkaufen' : 'kaufen'} wir aktuell nicht.`);
     return openTicket(i, {
-      kind: `spawner-${arg}`, label: buy ? 'Spawner kaufen' : 'Spawner verkaufen', prefix: buy ? 'spawner-kauf' : 'spawner-verkauf',
+      kind: `spawner-${arg}`, label: buy ? 'Spawner kaufen' : 'Spawner verkaufen', prefix: 'spawner', emoji: buy ? '🛒' : '💰',
       roleIds: [env.SPAWNER_ROLE_ID],
       info: embed().setDescription('Ein Teammitglied meldet sich gleich bei dir.').addFields(
         { name: 'Minecraft-Name', value: f('ign'), inline: true },
@@ -698,8 +719,8 @@ async function onModal(i) {
 
 async function onAutocomplete(i) {
   const q = i.options.getFocused().toLowerCase();
-  const list = i.commandName === 'spawner'
-    ? db.data.spawners.map((s) => ({ name: s.name, value: s.name }))
+  const list = i.commandName === 'spawner' ? db.data.spawners.map((s) => ({ name: s.name, value: s.name }))
+    : i.commandName === 'ticketnummer' ? ticketTypes().map((k) => ({ name: `${k} (aktuell #${db.data.counters[k] ?? 0})`, value: k }))
     : db.data.services.map((s) => ({ name: `${s.emoji} ${s.name}`, value: s.id }));
   return i.respond(list.filter((o) => o.name.toLowerCase().includes(q)).slice(0, 25));
 }
@@ -757,4 +778,4 @@ client.on('messageDelete', (msg) => {
 
 web.start();
 client.login(env.TOKEN);
-module.exports = { PANELS, commands };
+module.exports = { PANELS, commands, openTicket };

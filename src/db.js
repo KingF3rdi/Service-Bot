@@ -30,6 +30,7 @@ const defaults = {
   maparts: {}, // id -> { name, price, size, ownerId, ownerName, thirdParty, image, messageId }
   schematics: {}, // id -> { name, price, desc, image, file, fileName, messageId }
   vouches: [], // { user, avatar, stars, text, service, date }
+  counters: {}, // Ticket-Bereich -> letzte vergebene Nummer
   open: {}, // channelId -> { userId, kind, serviceId, label }
   panels: {}, // key -> { channelId, messageId }
 };
