@@ -89,15 +89,21 @@ function customPanel() {
   return { embeds: [e], components: [row(menu)] };
 }
 
+const spawnerImage = () => new AttachmentBuilder(renderSpawnerPanel(db.data.spawners), { name: 'spawner.png' });
+const spawnerTradeButtons = () => [
+  new ButtonBuilder().setCustomId('spawner:buy').setLabel('Spawner kaufen').setEmoji('🛒').setStyle(ButtonStyle.Success),
+  new ButtonBuilder().setCustomId('spawner:sell').setLabel('Spawner verkaufen').setEmoji('💰').setStyle(ButtonStyle.Primary),
+];
+
 function spawnerPanel() {
   return {
     content: '',
     embeds: [],
-    files: [new AttachmentBuilder(renderSpawnerPanel(db.data.spawners), { name: 'spawner.png' })],
+    files: [spawnerImage()],
     components: [row(
-      new ButtonBuilder().setCustomId('spawner:buy').setLabel('Spawner kaufen').setEmoji('🛒').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('spawner:sell').setLabel('Spawner verkaufen').setEmoji('💰').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('spawneredit').setLabel('Preise aktualisieren').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
+      ...spawnerTradeButtons(),
+      new ButtonBuilder().setCustomId('spawnerview').setLabel('Preise aktualisieren').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('spawneredit').setLabel('Preise setzen').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
     )],
   };
 }
@@ -556,6 +562,16 @@ async function onComponent(i) {
       input('notes', 'Anmerkungen', TextInputStyle.Paragraph, false)));
   }
 
+  // Für alle: aktuellen Stand nur für den Klickenden neu rendern
+  if (id === 'spawnerview') {
+    return i.reply({
+      ephemeral: true,
+      content: `🔄 **Aktuelle Spawner-Preise** · Stand <t:${Math.floor(Date.now() / 1000)}:T>`,
+      files: [spawnerImage()],
+      components: [row(...spawnerTradeButtons())],
+    });
+  }
+
   if (id === 'spawneredit') {
     if (!isTeam(i, cfg('SPAWNER_ROLE_ID'))) return i.reply({ content: '⛔ Nur das Team kann Spawner-Preise ändern.', ephemeral: true });
     // Button -> Auswahl, Auswahl -> Formular mit aktuellen Werten
@@ -851,4 +867,4 @@ client.on('messageDelete', (msg) => msg.guildId && db.run(msg.guildId, () => {
 
 web.start();
 client.login(env.TOKEN);
-module.exports = { PANELS, commands, openTicket, onCommand };
+module.exports = { PANELS, commands, openTicket, onCommand, onComponent };

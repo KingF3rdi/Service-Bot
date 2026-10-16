@@ -13,7 +13,7 @@ Läuft auf **mehreren Discord-Servern gleichzeitig** – jeder Server hat eigene
 - **Map-Art-Panel** – Übersicht aller verfügbaren Map-Arts mit Kauf-Dropdown, aktualisiert sich automatisch
 - **AFK-Panel** – Standard oder Deluxe (mit Farm-Refill, Aufpreis + Material), 22h oder 20h Uptime, Verkauf per /order oder /sell; Preise per `/afkpreis`
 - **Custom Map-Art** – Carpet/Block · 2D/3D, Preis pro Map per `/custompreis`
-- **Spawner-Handel** – gerendertes Panel, Kauf/Verkauf-Buttons, Preise per Team-Button „Preise aktualisieren“ oder `/spawner set`
+- **Spawner-Handel** – gerendertes Panel, Kauf/Verkauf-Buttons, „Preise aktualisieren“ zeigt jedem den neuesten Stand, „Preise setzen“ (nur Team) oder `/spawner set` ändert sie
 - **Schematics** – `/schematic` mit Vorschaubild + hinterlegter Datei, Übersichts-Panel; Datei wird nach Bezahlung im Ticket per Button ausgeliefert (DM + Ticket)
 - **Support-Tickets** – Panel mit Themen (Frage, Bestellung, Report, Sonstiges)
 - **Vouches per DM** – automatisch nach Ticket-Schließung oder per `/vouchanfrage @kunde`, Veröffentlichung im Vouch-Kanal
