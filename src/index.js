@@ -14,8 +14,8 @@ const { isStop, parseMoney, fmtMoney, CUSTOM_TYPES } = require('./util');
 const web = require('./web');
 
 const env = process.env;
-// Einstellungen aus /setup haben Vorrang vor der .env
-const cfg = (key) => db.data.config[key] || env[key];
+// Einstellungen aus /setup; .env nur als Fallback für den Server aus GUILD_ID (IDs sind serverspezifisch)
+const cfg = (key) => db.data.config[key] || (db.guildId() === env.GUILD_ID ? env[key] : undefined);
 const BRAND = 0xf4b400;
 const BRAND_NAME = 'HugoSMP Service Center';
 const P = PermissionFlagsBits;
@@ -226,7 +226,8 @@ function vouchPrompt(label) {
     embeds: [embed().setTitle('⭐ Wie zufrieden warst du?')
       .setDescription(`Danke, dass du das **${BRAND_NAME}** genutzt hast!\n\nBewerte deinen Service **${l}** – deine Bewertung wird im Vouch-Kanal veröffentlicht.`)],
     components: [row(...[1, 2, 3, 4, 5].map((n) =>
-      new ButtonBuilder().setCustomId(`vouch:${n}:${l}`).setLabel('⭐'.repeat(n)).setStyle(n >= 4 ? ButtonStyle.Success : ButtonStyle.Secondary)))],
+      // Server-ID im Button: die DM hat keinen Server-Kontext
+      new ButtonBuilder().setCustomId(`vouch:${db.guildId()}:${n}:${l}`).setLabel('⭐'.repeat(n)).setStyle(n >= 4 ? ButtonStyle.Success : ButtonStyle.Secondary)))],
   };
 }
 
@@ -653,8 +654,8 @@ async function onComponent(i) {
   }
 
   if (id === 'vouch') {
-    const [stars, ...l] = rest;
-    return i.showModal(modal(`vouchm:${stars}:${l.join(':')}`, `Bewertung · ${'⭐'.repeat(+stars)}`,
+    const [gid, stars, ...l] = rest;
+    return i.showModal(modal(`vouchm:${gid}:${stars}:${l.join(':')}`, `Bewertung · ${'⭐'.repeat(+stars)}`,
       input('text', 'Deine Bewertung', TextInputStyle.Paragraph, true, 'Wie lief der Service?')));
   }
 }
@@ -665,7 +666,7 @@ async function onModal(i) {
   const f = (k) => i.fields.getTextInputValue(k);
 
   if (id === 'vouchm') {
-    const [stars, ...l] = rest;
+    const [, stars, ...l] = rest;
     const ch = await client.channels.fetch(cfg('VOUCH_CHANNEL_ID')).catch(() => null);
     if (!ch) return i.reply({ content: '❌ Vouch-Kanal nicht gefunden – bitte melde dich beim Team.', ephemeral: true });
     await ch.send({
@@ -788,20 +789,31 @@ async function onAutocomplete(i) {
 
 // ---------- Events ----------
 
-client.once('clientReady', async () => {
-  const g = await client.guilds.fetch(env.GUILD_ID).catch(() => null);
-  if (!g) {
-    const invite = `https://discord.com/oauth2/authorize?client_id=${client.user.id}&scope=bot+applications.commands&permissions=8`;
-    console.error(`❌ Bot ist nicht auf dem Server GUILD_ID=${env.GUILD_ID} (oder die ID ist falsch).\n   Server, auf denen der Bot ist: ${client.guilds.cache.map((x) => `${x.name} (${x.id})`).join(', ') || 'keine'}\n   Bot einladen: ${invite}`);
-    return process.exit(1);
-  }
+// Commands pro Server registrieren (sofort verfügbar) und bestehende Panels neu zeichnen (z. B. neue Buttons)
+const setupGuild = (g) => db.run(g.id, async () => {
   await g.commands.set(commands.map((c) => c.toJSON()));
-  // Bestehende Panels nach Updates neu zeichnen (z. B. neue Buttons)
   for (const key of Object.keys(db.data.panels)) if (PANELS[key]) await refresh(key);
-  console.log(`${BRAND_NAME} online als ${client.user.tag}`);
+  console.log(`  ✅ ${g.name} (${g.id})`);
+}).catch((err) => console.error(`  ❌ ${g.name} (${g.id}):`, err.message));
+
+client.once('clientReady', async () => {
+  console.log(`${BRAND_NAME} online als ${client.user.tag} – ${client.guilds.cache.size} Server:`);
+  for (const g of client.guilds.cache.values()) await setupGuild(g);
+  if (!client.guilds.cache.size) {
+    console.log(`  Noch auf keinem Server. Einladen: https://discord.com/oauth2/authorize?client_id=${client.user.id}&scope=bot+applications.commands&permissions=8`);
+  }
 });
 
-client.on('interactionCreate', async (i) => {
+// Neu eingeladen -> direkt einrichten
+client.on('guildCreate', setupGuild);
+
+client.on('interactionCreate', (i) => {
+  // Vouch-Buttons/-Formulare kommen aus DMs: Server-ID steckt in der customId
+  const gid = i.guildId ?? (/^vouchm?:/.test(i.customId ?? '') ? i.customId.split(':')[1] : undefined);
+  return db.run(gid, () => handleInteraction(i));
+});
+
+async function handleInteraction(i) {
   try {
     if (i.isAutocomplete()) return await onAutocomplete(i);
     if (i.isChatInputCommand()) return await onCommand(i);
@@ -812,19 +824,19 @@ client.on('interactionCreate', async (i) => {
     const msg = { content: '❌ Da ist etwas schiefgelaufen.', ephemeral: true };
     if (i.isRepliable()) (i.deferred || i.replied ? i.followUp(msg) : i.reply(msg)).catch(() => {});
   }
-});
+}
 
 // Ticket gelöscht (Button oder manuell) -> Zähler freigeben
-client.on('channelDelete', (ch) => {
+client.on('channelDelete', (ch) => ch.guildId && db.run(ch.guildId, () => {
   const t = db.data.open[ch.id];
   if (!t) return;
   delete db.data.open[ch.id];
   db.save();
   if (t.serviceId) refresh('service');
-});
+}));
 
 // Map-Art- / Schematic-Post gelöscht -> Eintrag, Bild und Datei entfernen
-client.on('messageDelete', (msg) => {
+client.on('messageDelete', (msg) => msg.guildId && db.run(msg.guildId, () => {
   for (const [key, panel] of [['maparts', 'mapart'], ['schematics', 'schematic']]) {
     const id = Object.keys(db.data[key]).find((k) => db.data[key][k].messageId === msg.id);
     if (!id) continue;
@@ -835,7 +847,7 @@ client.on('messageDelete', (msg) => {
     db.save();
     refresh(panel);
   }
-});
+}));
 
 web.start();
 client.login(env.TOKEN);

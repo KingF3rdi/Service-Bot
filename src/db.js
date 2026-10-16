@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { AsyncLocalStorage } = require('node:async_hooks');
 
 const FILE = path.join(__dirname, '..', 'data.json');
 
@@ -37,11 +38,29 @@ const defaults = {
   panels: {}, // key -> { channelId, messageId }
 };
 
-const data = fs.existsSync(FILE)
-  ? { ...structuredClone(defaults), ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }
-  : structuredClone(defaults);
+// Pro Discord-Server eigene Daten: { guilds: { [guildId]: { ...defaults } } }
+const raw = fs.existsSync(FILE) ? JSON.parse(fs.readFileSync(FILE, 'utf8')) : { guilds: {} };
+// Altes Format (nur ein Server) -> unter GUILD_ID einsortieren
+const store = raw.guilds ? raw : { guilds: { [process.env.GUILD_ID || 'default']: raw } };
+for (const id in store.guilds) store.guilds[id] = { ...structuredClone(defaults), ...store.guilds[id] };
+
+const guild = (id) => (store.guilds[id] ??= structuredClone(defaults));
+
+// Jede Interaktion / jedes Event läuft per db.run(guildId, …) – db.data ist dann automatisch
+// der richtige Server. Ohne Kontext (Website): WEB_GUILD_ID, GUILD_ID oder der erste Server.
+const als = new AsyncLocalStorage();
+const fallbackId = () => process.env.WEB_GUILD_ID || process.env.GUILD_ID || Object.keys(store.guilds)[0];
 
 // ponytail: sync JSON file write, swap for SQLite once the website reads/writes concurrently
-const save = () => fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+const save = () => fs.writeFileSync(FILE, JSON.stringify(store, null, 2));
 
-module.exports = { data, save };
+module.exports = {
+  get data() {
+    const id = als.getStore() ?? fallbackId();
+    return id ? guild(id) : structuredClone(defaults);
+  },
+  guildId: () => als.getStore(),
+  guildIds: () => Object.keys(store.guilds),
+  run: (id, fn) => als.run(id, fn),
+  save,
+};

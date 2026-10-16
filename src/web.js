@@ -31,10 +31,13 @@ function publicData() {
 // SERVER_PORT = vom Hoster (Pterodactyl) zugewiesener Port
 function start(port = process.env.WEB_PORT || process.env.SERVER_PORT || 3000) {
   http.createServer((req, res) => {
-    const url = req.url.split('?')[0];
+    const [url, query] = req.url.split('?');
     if (url === '/api/data') {
+      // ?guild=ID zeigt einen anderen Server; nur bekannte IDs, sonst Standard-Server
+      const gid = new URLSearchParams(query).get('guild');
+      const data = db.run(db.guildIds().includes(gid) ? gid : undefined, publicData);
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-      return res.end(JSON.stringify(publicData()));
+      return res.end(JSON.stringify(data));
     }
     if (url.startsWith('/uploads/')) {
       const name = path.basename(url); // basename = kein Path-Traversal

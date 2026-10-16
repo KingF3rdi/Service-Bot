@@ -2,6 +2,8 @@
 
 Discord-Bot + Website für das HugoSMP Service Center: Map-Arts, AFK-Service (22h Uptime), Spawner-Handel, Tickets und Vouches.
 
+Läuft auf **mehreren Discord-Servern gleichzeitig** – jeder Server hat eigene Services, Preise, Spawner, Tickets, Vouches und eigenes `/setup`.
+
 ![Spawner Panel](docs/spawner-panel.png)
 
 ## Features
@@ -23,7 +25,7 @@ Benötigt Node.js 20+.
 
 ```bash
 npm install
-cp .env.example .env   # TOKEN + GUILD_ID eintragen
+cp .env.example .env   # TOKEN eintragen
 npm start              # Bot + Website (Port 3000), Hoster: Startdatei index.js
 ```
 

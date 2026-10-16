@@ -372,7 +372,7 @@
   }
 
   $('year').textContent = new Date().getFullYear();
-  fetch('/api/data').then((r) => r.json()).then(render).catch(() => {
+  fetch('/api/data' + location.search).then((r) => r.json()).then(render).catch(() => {
     ['services-list', 'spawner-list', 'mapart-list', 'custom-list', 'vouch-list'].forEach((id) => { $(id).innerHTML = empty('Daten konnten nicht geladen werden.'); });
   });
 </script>
