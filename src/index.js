@@ -42,7 +42,10 @@ const slug = (s) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-'
 const openCount = (serviceId) => Object.values(db.data.open).filter((t) => t.serviceId === serviceId).length;
 const findService = (id) => db.data.services.find((s) => s.id === id);
 const findSpawner = (name) => db.data.spawners.find((s) => s.name.toLowerCase() === name.trim().toLowerCase());
-const isTeam = (i, roleId) => i.memberPermissions?.has(P.ManageGuild) || Boolean(roleId && i.member?.roles?.cache?.has(roleId));
+const isTeam = (i, roleIds) => i.memberPermissions?.has(P.ManageGuild) || [].concat(roleIds).some((r) => r && i.member?.roles?.cache?.has(r));
+const closeButton = () => new ButtonBuilder().setCustomId('close').setLabel('Ticket schließen').setEmoji('🔒').setStyle(ButtonStyle.Danger);
+const starButtons = (prefix) => row(...[1, 2, 3, 4, 5].map((n) =>
+  new ButtonBuilder().setCustomId(`${prefix}${n}`).setLabel('⭐'.repeat(n)).setStyle(n >= 4 ? ButtonStyle.Success : ButtonStyle.Secondary)));
 const download = async (att) => Buffer.from(await (await fetch(att.url)).arrayBuffer());
 const extOf = (name) => name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
 // Schematic-Dateien privat speichern (nicht unter uploads/, das ist öffentlich)
@@ -109,6 +112,41 @@ function spawnerPanel() {
 }
 
 const AFK_ID = 'afk-service'; // Rollen & Ticket-Limit kommen vom gleichnamigen Service
+
+// AFK-Ticket: Team übernimmt -> Kunde vouched im Ticket für den Übernehmer -> Button läuft aus
+const afkTicketRow = (t) => row(
+  new ButtonBuilder().setCustomId('afkclaim').setEmoji('🙋').setDisabled(Boolean(t.claimedBy))
+    .setStyle(t.claimedBy ? ButtonStyle.Secondary : ButtonStyle.Primary)
+    .setLabel(t.claimedBy ? `Übernommen von ${t.claimedName}`.slice(0, 80) : 'AFK übernehmen'),
+  new ButtonBuilder().setCustomId('afkvouch').setEmoji(t.vouched ? '✅' : '⭐').setDisabled(Boolean(t.vouched))
+    .setStyle(t.vouched ? ButtonStyle.Secondary : ButtonStyle.Success)
+    .setLabel(t.vouched ? 'Vouch abgegeben – ausgelaufen' : 'Vouch abgeben'),
+  closeButton(),
+);
+
+// Prüft, ob im aktuellen Kanal ein AFK-Vouch möglich ist; gibt Fehlertext oder das Ticket zurück
+function afkVouchCheck(i) {
+  const t = db.data.open[i.channelId];
+  if (t?.serviceId !== AFK_ID) return { error: '❌ Das geht nur in einem AFK-Ticket.' };
+  if (i.user.id !== t.userId) return { error: '⛔ Nur der Kunde dieses Tickets kann vouchen.' };
+  if (!t.claimedBy) return { error: '⏳ Noch hat niemand aus dem Team deinen AFK Service übernommen.' };
+  if (t.vouched) return { error: '✅ Für diesen AFK Service wurde bereits gevoucht.' };
+  return { t };
+}
+
+async function postVouch({ user, stars, text, service, staffId, staffName }) {
+  const ch = await client.channels.fetch(cfg('VOUCH_CHANNEL_ID')).catch(() => null);
+  if (!ch) return false;
+  const e = embed().setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
+    .setTitle(`${'⭐'.repeat(stars)}${'☆'.repeat(5 - stars)}`)
+    .setDescription(`>>> ${text}`)
+    .addFields({ name: 'Service', value: service, inline: true }, { name: 'Kunde', value: `${user}`, inline: true });
+  if (staffId) e.addFields({ name: 'Vouch für', value: `<@${staffId}>`, inline: true });
+  await ch.send({ embeds: [e] });
+  db.data.vouches.push({ user: user.username, avatar: user.displayAvatarURL({ size: 64 }), stars, text, service, staff: staffName, date: Date.now() });
+  db.save();
+  return true;
+}
 const AFK_UPTIMES = ['22h', '20h'];
 const AFK_SELL = { order: 'Verkauf per /order', sell: 'Verkauf per /sell' };
 const priceOr = (v) => (!v || v === '0' ? 'Auf Anfrage' : v);
@@ -214,14 +252,15 @@ async function openTicket(i, { kind, serviceId = null, label, prefix, emoji = TI
     ],
   });
 
-  db.data.open[ch.id] = { userId: i.user.id, kind, serviceId, label, number };
-  db.save();
+  const t = db.data.open[ch.id] = { userId: i.user.id, kind, serviceId, label, number };
 
-  await ch.send({
+  const msg = await ch.send({
     content: [i.user, ...extras.map((id) => `<@${id}>`), ...roles.map((id) => `<@&${id}>`)].join(' '),
     embeds: [info.setTitle(`${emoji} ${label} · Ticket #${number}`)],
-    components: [row(...buttons, new ButtonBuilder().setCustomId('close').setLabel('Ticket schließen').setEmoji('🔒').setStyle(ButtonStyle.Danger))],
+    components: [serviceId === AFK_ID ? afkTicketRow(t) : row(...buttons, closeButton())],
   });
+  t.messageId = msg.id;
+  db.save();
   if (serviceId) refresh('service');
   return i.editReply(`✅ Dein Ticket wurde erstellt: ${ch}`);
 }
@@ -511,6 +550,8 @@ async function onCommand(i) {
   }
 
   if (i.commandName === 'vouch') {
+    // Im AFK-Ticket: Vouch für den Übernehmer direkt hier
+    if (db.data.open[i.channelId]?.serviceId === AFK_ID) return onComponent(Object.assign(i, { customId: 'afkvouch' }));
     const ok = await i.user.send(vouchPrompt(BRAND_NAME)).catch(() => null);
     return i.reply({ content: ok ? '📬 Schau in deine DMs!' : '❌ Ich kann dir keine DM senden – bitte DMs aktivieren.', ephemeral: true });
   }
@@ -646,7 +687,7 @@ async function onComponent(i) {
     await i.channel.send({ content: `${buyer} ${dm ? '📬 Datei wurde dir auch per DM geschickt.' : '⚠️ DM nicht möglich – hier ist deine Datei:'}`, ...delivery, files: [new AttachmentBuilder(file, { name: s.fileName })] });
     return i.message.edit({ components: [row(
       new ButtonBuilder().setCustomId('schemsent').setLabel(`Ausgeliefert von ${i.user.username}`.slice(0, 80)).setEmoji('✅').setStyle(ButtonStyle.Secondary).setDisabled(true),
-      new ButtonBuilder().setCustomId('close').setLabel('Ticket schließen').setEmoji('🔒').setStyle(ButtonStyle.Danger),
+      closeButton(),
     )] });
   }
 
@@ -661,12 +702,37 @@ async function onComponent(i) {
   if (id === 'close') {
     const t = db.data.open[i.channelId];
     await i.reply({ embeds: [embed().setDescription(`🔒 Ticket wird von ${i.user} geschlossen …`)] });
-    if (t) {
+    if (t && !t.vouched) { // schon im Ticket gevoucht -> keine DM-Anfrage mehr
       const user = await client.users.fetch(t.userId).catch(() => null);
       await user?.send(vouchPrompt(t.label)).catch(() => {});
     }
     setTimeout(() => i.channel.delete().catch(console.error), 5000);
     return;
+  }
+
+  if (id === 'afkclaim') {
+    const t = db.data.open[i.channelId];
+    if (!t) return i.reply({ content: '❌ Ticket nicht gefunden.', ephemeral: true });
+    if (!isTeam(i, findService(AFK_ID)?.roleIds ?? [])) return i.reply({ content: '⛔ Nur das AFK-Team kann übernehmen.', ephemeral: true });
+    if (t.claimedBy) return i.reply({ content: `Bereits übernommen von <@${t.claimedBy}>.`, ephemeral: true });
+    Object.assign(t, { claimedBy: i.user.id, claimedName: i.user.username });
+    db.save();
+    await i.update({ components: [afkTicketRow(t)] });
+    return i.channel.send({ embeds: [embed().setDescription(
+      `🙋 ${i.user} hat diesen AFK Service übernommen.\n\n<@${t.userId}> Nach erfolgreichem Service kannst du hier mit **⭐ Vouch abgeben** oder \`/vouch\` für ${i.user} vouchen.`)] });
+  }
+
+  if (id === 'afkvouch') {
+    const { error } = afkVouchCheck(i);
+    if (error) return i.reply({ content: error, ephemeral: true });
+    return i.reply({ content: '⭐ Wie zufrieden warst du mit dem AFK Service?', components: [starButtons('afkstar:')], ephemeral: true });
+  }
+
+  if (id === 'afkstar') {
+    const { error } = afkVouchCheck(i);
+    if (error) return i.reply({ content: error, ephemeral: true });
+    return i.showModal(modal(`afkvouchm:${arg}`, `AFK-Vouch · ${'⭐'.repeat(+arg)}`,
+      input('text', 'Deine Bewertung', TextInputStyle.Paragraph, true, 'Wie lief der AFK Service?')));
   }
 
   if (id === 'vouch') {
@@ -681,21 +747,24 @@ async function onModal(i) {
   const arg = rest.join(':');
   const f = (k) => i.fields.getTextInputValue(k);
 
+  if (id === 'afkvouchm') {
+    const { t, error } = afkVouchCheck(i);
+    if (error) return i.reply({ content: error, ephemeral: true });
+    const ok = await postVouch({ user: i.user, stars: +arg, text: f('text'), service: `AFK Service · Ticket #${t.number}`, staffId: t.claimedBy, staffName: t.claimedName });
+    if (!ok) return i.reply({ content: '❌ Vouch-Kanal nicht gefunden – bitte melde dich beim Team.', ephemeral: true });
+    t.vouched = true;
+    db.save();
+    // Vouch-Button im Ticket läuft aus
+    const msg = t.messageId && await i.channel.messages.fetch(t.messageId).catch(() => null);
+    await msg?.edit({ components: [afkTicketRow(t)] }).catch(() => {});
+    await i.channel.send({ embeds: [embed().setDescription(`⭐ ${i.user} hat für <@${t.claimedBy}> gevoucht (${'⭐'.repeat(+arg)}). Danke!`)] });
+    return i.update({ content: '💛 Danke! Dein Vouch wurde im Vouch-Kanal veröffentlicht.', components: [] });
+  }
+
   if (id === 'vouchm') {
     const [, stars, ...l] = rest;
-    const ch = await client.channels.fetch(cfg('VOUCH_CHANNEL_ID')).catch(() => null);
-    if (!ch) return i.reply({ content: '❌ Vouch-Kanal nicht gefunden – bitte melde dich beim Team.', ephemeral: true });
-    await ch.send({
-      embeds: [embed().setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() })
-        .setTitle(`${'⭐'.repeat(+stars)}${'☆'.repeat(5 - stars)}`)
-        .setDescription(`>>> ${f('text')}`)
-        .addFields({ name: 'Service', value: l.join(':') || BRAND_NAME, inline: true }, { name: 'Kunde', value: `${i.user}`, inline: true })],
-    });
-    db.data.vouches.push({
-      user: i.user.username, avatar: i.user.displayAvatarURL({ size: 64 }), stars: +stars,
-      text: f('text'), service: l.join(':') || BRAND_NAME, date: Date.now(),
-    });
-    db.save();
+    const ok = await postVouch({ user: i.user, stars: +stars, text: f('text'), service: l.join(':') || BRAND_NAME });
+    if (!ok) return i.reply({ content: '❌ Vouch-Kanal nicht gefunden – bitte melde dich beim Team.', ephemeral: true });
     return i.update({ embeds: [embed().setTitle('💛 Danke für deine Bewertung!').setDescription('Sie wurde im Vouch-Kanal veröffentlicht.')], components: [] });
   }
 
@@ -867,4 +936,4 @@ client.on('messageDelete', (msg) => msg.guildId && db.run(msg.guildId, () => {
 
 web.start();
 client.login(env.TOKEN);
-module.exports = { PANELS, commands, openTicket, onCommand, onComponent };
+module.exports = { PANELS, commands, openTicket, onCommand, onComponent, onModal };

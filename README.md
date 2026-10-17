@@ -17,6 +17,7 @@ Läuft auf **mehreren Discord-Servern gleichzeitig** – jeder Server hat eigene
 - **Schematics** – `/schematic` mit Vorschaubild + hinterlegter Datei, Übersichts-Panel; Datei wird nach Bezahlung im Ticket per Button ausgeliefert (DM + Ticket)
 - **Support-Tickets** – Panel mit Themen (Frage, Bestellung, Report, Sonstiges)
 - **Vouches per DM** – automatisch nach Ticket-Schließung oder per `/vouchanfrage @kunde`, Veröffentlichung im Vouch-Kanal
+- **AFK-Tickets** – Team übernimmt per Button, Kunde voucht im Ticket (Button oder `/vouch`) für den Übernehmer; danach läuft der Vouch-Button aus und die DM-Anfrage entfällt
 - **Website** – zeigt Services, Spawner-Preise, Map-Arts, Custom-Preise und Vouches live
 
 ## Setup

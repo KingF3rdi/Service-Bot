@@ -367,7 +367,7 @@
     $('vouch-list').innerHTML = d.vouches.map((v) => `<div class="card vouch">
       <span class="stars" aria-label="${v.stars} von 5 Sternen">${'★'.repeat(v.stars)}${'☆'.repeat(5 - v.stars)}</span>
       <p>${esc(v.text)}</p>
-      <div class="who"><img src="${esc(v.avatar)}" alt="" loading="lazy"><div><b>${esc(v.user)}</b><small>${esc(v.service)} · ${new Date(v.date).toLocaleDateString('de-DE')}</small></div></div>
+      <div class="who"><img src="${esc(v.avatar)}" alt="" loading="lazy"><div><b>${esc(v.user)}</b><small>${esc(v.service)}${v.staff ? ` · für ${esc(v.staff)}` : ''} · ${new Date(v.date).toLocaleDateString('de-DE')}</small></div></div>
     </div>`).join('') || empty('Noch keine Bewertungen – sei der Erste!');
   }
 
