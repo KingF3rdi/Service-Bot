@@ -183,20 +183,31 @@ function mapartPanel() {
   return { embeds: [e], components: [row(menu)] };
 }
 
-function schematicPanel() {
-  const list = Object.entries(db.data.schematics).reverse().slice(0, 25);
-  const e = embed().setTitle('📐 Schematics kaufen').setDescription([
-    'Fertige Schematics unserer Builder – nach dem Kauf bekommst du die Datei direkt per DM.',
+// Digitale Produkte: Vorschaubild + private Datei, Auslieferung nach Bezahlung im Ticket
+const SHOPS = {
+  schematic: { label: 'Schematic', plural: 'Schematics', this: 'diese', your: 'deine', emoji: '📐', store: 'schematics', roleKey: 'SCHEMATIC_ROLE_ID',
+    exts: ['litematic', 'schem', 'schematic', 'nbt'], intro: 'Fertige Schematics unserer Builder' },
+  mod: { label: 'Mod', plural: 'Mods', this: 'diesen', your: 'dein', emoji: '🧩', store: 'mods', roleKey: 'MOD_ROLE_ID',
+    exts: ['jar', 'zip'], intro: 'Mods für dein Minecraft' },
+  watermark: { label: 'Watermark', plural: 'Watermarks', this: 'dieses', your: 'dein', emoji: '💧', store: 'watermarks', roleKey: 'WATERMARK_ROLE_ID',
+    exts: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'zip', 'psd'], intro: 'Watermarks & Logos für deine Map-Arts und Bilder' },
+};
+
+const shopPanel = (k) => () => {
+  const shop = SHOPS[k];
+  const list = Object.entries(db.data[shop.store]).reverse().slice(0, 25);
+  const e = embed().setTitle(`${shop.emoji} ${shop.plural} kaufen`).setDescription([
+    `${shop.intro} – nach dem Kauf bekommst du die Datei direkt per DM.`,
     ...(list.length
       ? list.map(([, s]) => `### ${s.name}\n💰 **${s.price}** · 📄 .${extOf(s.file)}${s.desc ? `\n${s.desc.split('\n')[0].slice(0, 120)}` : ''}`)
-      : ['*Gerade sind keine Schematics verfügbar – schau bald wieder vorbei.*']),
-    '-# Vorschaubilder findest du in den einzelnen Schematic-Posts und auf unserer Website.',
+      : [`*Gerade sind keine ${shop.plural} verfügbar – schau bald wieder vorbei.*`]),
+    `-# Vorschaubilder findest du in den einzelnen ${shop.label}-Posts und auf unserer Website.`,
   ].join('\n\n'));
   if (!list.length) return { embeds: [e], components: [] };
-  const menu = new StringSelectMenuBuilder().setCustomId('schemsel').setPlaceholder('Schematic auswählen …')
-    .addOptions(list.map(([id, s]) => ({ label: s.name.slice(0, 100), value: id, emoji: '📐', description: `${s.price} · .${extOf(s.file)}`.slice(0, 100) })));
+  const menu = new StringSelectMenuBuilder().setCustomId(`shopsel:${k}`).setPlaceholder(`${shop.label} auswählen …`)
+    .addOptions(list.map(([id, s]) => ({ label: s.name.slice(0, 100), value: id, emoji: shop.emoji, description: `${s.price} · .${extOf(s.file)}`.slice(0, 100) })));
   return { embeds: [e], components: [row(menu)] };
-}
+};
 
 function supportPanel() {
   const e = embed().setTitle('🛟 Support').setDescription([
@@ -209,7 +220,8 @@ function supportPanel() {
   return { embeds: [e], components: [row(menu)] };
 }
 
-const PANELS = { service: servicePanel, custom: customPanel, spawner: spawnerPanel, afk: afkPanel, mapart: mapartPanel, schematic: schematicPanel, support: supportPanel };
+const PANELS = { service: servicePanel, custom: customPanel, spawner: spawnerPanel, afk: afkPanel, mapart: mapartPanel, support: supportPanel,
+  schematic: shopPanel('schematic'), mod: shopPanel('mod'), watermark: shopPanel('watermark') };
 
 async function refresh(key) {
   const p = db.data.panels[key];
@@ -223,7 +235,7 @@ async function refresh(key) {
 
 // Feste Ticket-Bereiche mit eigenem Zähler; Services aus /service kommen dynamisch dazu
 const TICKET_TYPES = {
-  afk: '⚡', mapart: '🖼️', custom: '🎨', spawner: '🥚', schematic: '📐', support: '🛟',
+  afk: '⚡', mapart: '🖼️', custom: '🎨', spawner: '🥚', schematic: '📐', mod: '🧩', watermark: '💧', support: '🛟',
 };
 const ticketTypes = () => [...Object.keys(TICKET_TYPES), ...db.data.services.map((s) => slug(s.name).slice(0, 20)).filter(Boolean)];
 
@@ -283,14 +295,15 @@ const commands = [
   new SlashCommandBuilder().setName('panel').setDescription('Panel in diesem Kanal senden').setDefaultMemberPermissions(admin)
     .addStringOption((o) => o.setName('typ').setDescription('Welches Panel?').setRequired(true)
       .addChoices({ name: 'Services', value: 'service' }, { name: 'Custom Map-Art', value: 'custom' }, { name: 'Spawner Handel', value: 'spawner' }, { name: 'AFK Service', value: 'afk' }, { name: 'Map-Arts', value: 'mapart' },
-        { name: 'Schematics', value: 'schematic' }, { name: 'Support', value: 'support' })),
+        { name: 'Schematics', value: 'schematic' }, { name: 'Mods', value: 'mod' }, { name: 'Watermarks', value: 'watermark' }, { name: 'Support', value: 'support' })),
 
-  new SlashCommandBuilder().setName('schematic').setDescription('Schematic zum Verkauf posten').setDefaultMemberPermissions(admin)
+  // /schematic, /mod, /watermark
+  ...Object.entries(SHOPS).map(([k, shop]) => new SlashCommandBuilder().setName(k).setDescription(`${shop.label} zum Verkauf posten`).setDefaultMemberPermissions(admin)
     .addAttachmentOption((o) => o.setName('bild').setDescription('Vorschaubild').setRequired(true))
-    .addAttachmentOption((o) => o.setName('datei').setDescription('.litematic / .schem / .schematic / .nbt – wird nach Kauf ausgeliefert').setRequired(true))
+    .addAttachmentOption((o) => o.setName('datei').setDescription(`${shop.exts.map((e) => `.${e}`).join(' / ')} – wird nach Kauf ausgeliefert`).setRequired(true))
     .addStringOption((o) => o.setName('name').setDescription('Name').setRequired(true).setMaxLength(80))
     .addStringOption((o) => o.setName('preis').setDescription('z. B. 3M').setRequired(true))
-    .addStringOption((o) => o.setName('beschreibung').setDescription('Kurzbeschreibung (\\n = neue Zeile)').setMaxLength(500)),
+    .addStringOption((o) => o.setName('beschreibung').setDescription('Kurzbeschreibung (\\n = neue Zeile)').setMaxLength(500))),
 
   new SlashCommandBuilder().setName('afkpreis').setDescription('Preise für das AFK-Panel setzen').setDefaultMemberPermissions(admin)
     .addStringOption((o) => o.setName('paket').setDescription('Was?').setRequired(true)
@@ -349,6 +362,8 @@ const commands = [
     .addRoleOption((o) => o.setName('mapart_rolle').setDescription('Support-Rolle für Map-Art- & Custom-Map-Art-Tickets'))
     .addRoleOption((o) => o.setName('spawner_rolle').setDescription('Support-Rolle für Spawner-Tickets & Preis-Button'))
     .addRoleOption((o) => o.setName('schematic_rolle').setDescription('Support-Rolle für Schematic-Tickets & Datei-Auslieferung'))
+    .addRoleOption((o) => o.setName('mod_rolle').setDescription('Support-Rolle für Mod-Tickets & Datei-Auslieferung'))
+    .addRoleOption((o) => o.setName('watermark_rolle').setDescription('Support-Rolle für Watermark-Tickets & Datei-Auslieferung'))
     .addRoleOption((o) => o.setName('support_rolle').setDescription('Rolle für allgemeine Support-Tickets')),
 
   new SlashCommandBuilder().setName('vouchanfrage').setDescription('Vouch-Anfrage per DM an einen Kunden senden').setDefaultMemberPermissions(P.ManageMessages)
@@ -364,6 +379,8 @@ const SETUP = {
   mapart_rolle: ['MAPART_ROLE_ID', 'Map-Art-Rolle', '@&'],
   spawner_rolle: ['SPAWNER_ROLE_ID', 'Spawner-Rolle', '@&'],
   schematic_rolle: ['SCHEMATIC_ROLE_ID', 'Schematic-Rolle', '@&'],
+  mod_rolle: ['MOD_ROLE_ID', 'Mod-Rolle', '@&'],
+  watermark_rolle: ['WATERMARK_ROLE_ID', 'Watermark-Rolle', '@&'],
   support_rolle: ['SUPPORT_ROLE_ID', 'Support-Rolle', '@&'],
 };
 
@@ -452,14 +469,15 @@ async function onCommand(i) {
     return i.editReply('✅ Map-Art gepostet.');
   }
 
-  if (i.commandName === 'schematic') {
+  if (SHOPS[i.commandName]) {
+    const k = i.commandName, shop = SHOPS[k];
     await i.deferReply({ ephemeral: true });
     const img = i.options.getAttachment('bild');
     const dat = i.options.getAttachment('datei');
     if (!img.contentType?.startsWith('image/')) return i.editReply('❌ Das Vorschaubild muss ein Bild sein.');
-    if (!/\.(litematic|schem|schematic|nbt)$/i.test(dat.name)) return i.editReply('❌ Datei muss .litematic, .schem, .schematic oder .nbt sein.');
     const id = Date.now().toString(36);
     const iext = extOf(img.name), dext = extOf(dat.name);
+    if (!shop.exts.includes(dext)) return i.editReply(`❌ Datei muss ${shop.exts.map((x) => `.${x}`).join(', ')} sein.`);
     const imgBuf = await download(img);
     fs.mkdirSync(web.UPLOADS, { recursive: true });
     fs.mkdirSync(FILES, { recursive: true });
@@ -470,20 +488,20 @@ async function onCommand(i) {
       desc: (i.options.getString('beschreibung') ?? '').replaceAll('\\n', '\n'),
       image: `${id}.${iext}`, file: `${id}.${dext}`, fileName: dat.name.replace(/[^\w.-]/g, '_'),
     };
-    const e = embed().setTitle(`📐 ${s.name}`).setImage(`attachment://schematic.${iext}`).addFields(
+    const e = embed().setTitle(`${shop.emoji} ${s.name}`).setImage(`attachment://preview.${iext}`).addFields(
       { name: '💰 Preis', value: s.price, inline: true },
       { name: '📄 Format', value: `.${dext}`, inline: true },
       { name: '📦 Lieferung', value: 'Datei nach Kauf per DM', inline: true },
     );
     if (s.desc) e.setDescription(s.desc);
     const msg = await i.channel.send({
-      embeds: [e], files: [new AttachmentBuilder(imgBuf, { name: `schematic.${iext}` })],
-      components: [row(new ButtonBuilder().setCustomId(`schem:${id}`).setLabel('Schematic kaufen').setEmoji('🛒').setStyle(ButtonStyle.Success))],
+      embeds: [e], files: [new AttachmentBuilder(imgBuf, { name: `preview.${iext}` })],
+      components: [row(new ButtonBuilder().setCustomId(`shop:${k}:${id}`).setLabel(`${shop.label} kaufen`).setEmoji('🛒').setStyle(ButtonStyle.Success))],
     });
-    db.data.schematics[id] = { ...s, messageId: msg.id };
+    db.data[shop.store][id] = { ...s, messageId: msg.id };
     db.save();
-    await refresh('schematic');
-    return i.editReply('✅ Schematic gepostet. Die Datei ist hinterlegt und wird nach dem Kauf im Ticket per Button ausgeliefert.');
+    await refresh(k);
+    return i.editReply(`✅ ${shop.label} gepostet. Die Datei ist hinterlegt und wird nach dem Kauf im Ticket per Button ausgeliefert.`);
   }
 
   if (i.commandName === 'afkpreis') {
@@ -658,30 +676,35 @@ async function onComponent(i) {
     });
   }
 
-  if (id === 'schem' || id === 'schemsel') {
-    const sid = id === 'schem' ? arg : i.values[0];
-    const s = db.data.schematics[sid];
-    if (!s) return i.reply({ content: '❌ Diese Schematic ist nicht mehr verfügbar.', ephemeral: true });
+  // Shop-Kauf: shop:<kategorie>:<id> (Button), shopsel:<kategorie> (Dropdown); schem/schemsel = alte Schematic-Posts
+  if (['shop', 'shopsel', 'schem', 'schemsel'].includes(id)) {
+    const k = id.startsWith('schem') ? 'schematic' : rest[0];
+    const shop = SHOPS[k];
+    const pid = id.endsWith('sel') ? i.values[0] : id === 'schem' ? arg : rest[1];
+    const s = shop && db.data[shop.store][pid];
+    if (!s) return i.reply({ content: `❌ Dieses Produkt ist nicht mehr verfügbar.`, ephemeral: true });
     await i.deferReply({ ephemeral: true });
-    const info = embed().setDescription(`${i.user} möchte diese Schematic kaufen.\nNach der Bezahlung liefert das Team die Datei per Button aus.`)
-      .addFields({ name: '📐 Schematic', value: s.name, inline: true }, { name: '💰 Preis', value: s.price, inline: true }, { name: '📄 Format', value: `.${extOf(s.file)}`, inline: true });
-    const img = id === 'schem' && i.message.embeds[0]?.image?.url;
+    const info = embed().setDescription(`${i.user} möchte ${shop.this} ${shop.label} kaufen.\nNach der Bezahlung liefert das Team die Datei per Button aus.`)
+      .addFields({ name: `${shop.emoji} ${shop.label}`, value: s.name, inline: true }, { name: '💰 Preis', value: s.price, inline: true }, { name: '📄 Format', value: `.${extOf(s.file)}`, inline: true });
+    const img = !id.endsWith('sel') && i.message.embeds[0]?.image?.url;
     if (img) info.setThumbnail(img);
     return openTicket(i, {
-      kind: 'schematic', label: `Schematic: ${s.name}`, prefix: 'schematic', info, roleIds: [cfg('SCHEMATIC_ROLE_ID')],
-      buttons: [new ButtonBuilder().setCustomId(`schemsend:${sid}`).setLabel('Bezahlt – Datei senden').setEmoji('📤').setStyle(ButtonStyle.Success)],
+      kind: k, label: `${shop.label}: ${s.name}`, prefix: k, info, roleIds: [cfg(shop.roleKey)],
+      buttons: [new ButtonBuilder().setCustomId(`shopsend:${k}:${pid}`).setLabel('Bezahlt – Datei senden').setEmoji('📤').setStyle(ButtonStyle.Success)],
     });
   }
 
-  if (id === 'schemsend') {
-    if (!isTeam(i, cfg('SCHEMATIC_ROLE_ID'))) return i.reply({ content: '⛔ Nur das Team kann die Datei ausliefern.', ephemeral: true });
-    const s = db.data.schematics[arg];
+  if (id === 'shopsend' || id === 'schemsend') {
+    const k = id === 'schemsend' ? 'schematic' : rest[0];
+    const shop = SHOPS[k];
+    if (!isTeam(i, cfg(shop.roleKey))) return i.reply({ content: '⛔ Nur das Team kann die Datei ausliefern.', ephemeral: true });
+    const s = db.data[shop.store][id === 'schemsend' ? arg : rest[1]];
     const t = db.data.open[i.channelId];
     const file = s && path.join(FILES, s.file);
-    if (!s || !t || !fs.existsSync(file)) return i.reply({ content: '❌ Schematic-Datei nicht gefunden.', ephemeral: true });
+    if (!s || !t || !fs.existsSync(file)) return i.reply({ content: '❌ Datei nicht gefunden.', ephemeral: true });
     await i.deferUpdate();
     const buyer = await client.users.fetch(t.userId);
-    const delivery = { embeds: [embed().setTitle(`📦 ${s.name}`).setDescription(`Danke für deinen Kauf im **${BRAND_NAME}**! Hier ist deine Schematic.`)] };
+    const delivery = { embeds: [embed().setTitle(`📦 ${s.name}`).setDescription(`Danke für deinen Kauf im **${BRAND_NAME}**! Hier ist ${shop.your} ${shop.label}.`)] };
     const dm = await buyer.send({ ...delivery, files: [new AttachmentBuilder(file, { name: s.fileName })] }).catch(() => null);
     // Zusätzlich im Ticket, falls DMs zu sind
     await i.channel.send({ content: `${buyer} ${dm ? '📬 Datei wurde dir auch per DM geschickt.' : '⚠️ DM nicht möglich – hier ist deine Datei:'}`, ...delivery, files: [new AttachmentBuilder(file, { name: s.fileName })] });
@@ -920,9 +943,9 @@ client.on('channelDelete', (ch) => ch.guildId && db.run(ch.guildId, () => {
   if (t.serviceId) refresh('service');
 }));
 
-// Map-Art- / Schematic-Post gelöscht -> Eintrag, Bild und Datei entfernen
+// Map-Art- / Shop-Post gelöscht -> Eintrag, Bild und Datei entfernen
 client.on('messageDelete', (msg) => msg.guildId && db.run(msg.guildId, () => {
-  for (const [key, panel] of [['maparts', 'mapart'], ['schematics', 'schematic']]) {
+  for (const [key, panel] of [['maparts', 'mapart'], ...Object.entries(SHOPS).map(([k, s]) => [s.store, k])]) {
     const id = Object.keys(db.data[key]).find((k) => db.data[key][k].messageId === msg.id);
     if (!id) continue;
     const { image, file } = db.data[key][id];

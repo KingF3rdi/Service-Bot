@@ -29,7 +29,10 @@ const defaults = {
     { name: 'Zombie Piglin', get: 'STOP', pay: 'STOP', color: '#f48fb1' },
   ],
   maparts: {}, // id -> { name, price, size, ownerId, ownerName, thirdParty, image, messageId }
-  schematics: {}, // id -> { name, price, desc, image, file, fileName, messageId }
+  // Shop-Produkte: id -> { name, price, desc, image, file, fileName, messageId }
+  schematics: {},
+  mods: {},
+  watermarks: {},
   vouches: [], // { user, avatar, stars, text, service, date }
   config: {}, // per /setup gesetzte Kanal- & Rollen-IDs (Vorrang vor .env)
   counters: {}, // Ticket-Bereich -> letzte vergebene Nummer (startet bei 1)
